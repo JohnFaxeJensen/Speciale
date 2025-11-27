@@ -1,0 +1,6 @@
+Fit log normal til excel data, har middelværdi og spredning som parametre. prior for middelværdi og spredning. arviz 
+log normal prior. pymc gev
+
+pyro.
+
+Er det problem at jeg bruger 'Numba' som backend for pytensor? Den vil gerne have c++, men det har været supersvært at implementere det, fordi der er noget med versionsforskel.

@@ -1,0 +1,28 @@
+What is Bayesian Statistics?
+Given some data, we want to estimate the parameters of a model. Bayesian statistics allows us to combine prior beliefs about the parameters with the evidence from the data to compute a posterior distribution over the parameters. This posterior tells us what parameter values are most likely given both our prior knowledge and the observed data. It is build upon Bayesian statistics:
+-P(Parameter|Data) = Posterior prob: Given the data we have what parameter values for the model are possible.
+
+-P(Data|Parameter) = Likelihood: Given a specific parameter configuration what is then the probability of seeing this data.
+
+P(Parameter) = Prior probability: What is the probability of having this exact parameter configuration. Incorporates prior knowledge(example could be that one has an upper and lower limit on a specific parameter value, and then maybe besides that one expect it to be gaussian)
+
+P(Data) = Marginal Likelihood: Essentially used to normalize the posterior be using the total available parameter. This is unessesary when using MCMC because it cancels out when taking the ratio in the MCMC.
+
+Bayes law is given by:
+ P(Parameter|Data) = ((Data|Parameter)*P(Parameter))/P(Data)
+
+When using MCMC(Monte carlo-Markov chain) one essentially uses detailed balance to see that essentially when starting somewhere in the parameter space one will essentially start to sample the posterior distribution after enough steps. Pymc uses HMC which is an optimized markov chain that calculates the gradient of the posterior at each step to take better steps. 
+
+Essentially looking at how pymc works when defining a model:
+    with model:
+        # Sample from the posterior.
+
+        trace = pm.sample(5000, tune=2000, target_accept=0.95, random_seed=42)
+
+        summary = az.summary(trace, hdi_prob=0.95)
+
+The trace commands essentially performs the mcmc sampling. First by looking at burn in steps: which are steps used in the beginning to get the model close to the posterior, because in the beginning it may not sample the parameter space of the posterior.
+
+So essentially the posterior prob for each parameter that we get is essentially gotten from picking a new parameter configuration, calculate the prior probability for that configuration and then calculate that likelihood for that configuration. This is essentially the posterior probability for one configuration, then we change the configuration accept the change based on the algorithm choice and then again and then see what the posterior prob is. This is done 5000 times if we do 5000 steps. The histograms for parameters are essentially proportional to the posterior distribution for each parameter when enough samples are taken. One can make a contour plot and see the regions where the joint posterior probability is at is highest, this it the parameters for the model that best describe the observed data.
+
+Using the posterior predictive essentially creates fake data by using the posterior parameter space. So essentially it picks parameter configurations from the trace and draws fake data from the likelihood function with those parameters. This can be used to estimate how well the model describes the data.

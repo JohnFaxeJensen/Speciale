@@ -1,0 +1,5 @@
+Upper limit log normal. Prior hvor delta. 
+Fit lognormal to advanced model, maybe include upper limit lognormal.
+
+find database for hurricane simulations.
+elasticity exponent wind damage
