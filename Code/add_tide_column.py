@@ -57,7 +57,7 @@ def bounding_box(lat, lon, delta_lat=0.5, delta_lon=0.5):
 
 os.chdir(r"./Speciale/Pyfes_data")
 def simulate_tide_at_landfall(lat, lon, time):
-    bbox = bounding_box(lat, lon, delta_lat=5, delta_lon=5)
+    bbox = bounding_box(lat, lon, delta_lat=1, delta_lon=1)
     print(time)
     
 
@@ -87,7 +87,7 @@ def add_tide_column(df):
         tide_values.append(tide_level)
     df['Tide_Level'] = tide_values
     return df
-add_tide_column(data.head(10))
+add_tide_column(data.head(20))
 
 
 

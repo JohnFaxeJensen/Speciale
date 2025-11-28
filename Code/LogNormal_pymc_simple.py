@@ -24,7 +24,7 @@ def test_standard_lognormal(ATD, threshold=0.5):
     #pm.lognormal uses mu and sigma of the underlying normal distribution and is the likelihood
     
     with pm.Model() as model:
-        mu = pm.Normal('mu', mu=10, sigma=6)
+        mu = pm.Normal('mu', mu=18, sigma=10)
         sigma = pm.HalfNormal('sigma', sigma=6)
 
         lognormal_obs = pm.LogNormal('obs', mu=mu, sigma=sigma, observed=ATD_filtered)
@@ -90,7 +90,7 @@ def test_standard_lognormal(ATD, threshold=0.5):
 
 
 if __name__ == "__main__":
-    df = pd.read_excel('./Speciale/Aslak_data.xls', sheet_name='ATD of ICAT', engine='xlrd')
+    df = pd.read_excel('./Speciale/Hurricane_data/Aslak_data.xls', sheet_name='ATD of ICAT', engine='xlrd')
 
     ATD = df['ATD'].values
 
