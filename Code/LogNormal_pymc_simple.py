@@ -9,7 +9,7 @@ import os
 
 def test_standard_lognormal(ATD, threshold=0.5):
     #make plot dir if not exists
-    path = "Code/Plots/Simulated_posteriors/No_transform/Threshold_{}".format(threshold)
+    path = "./Speciale/Code/Plots/Simulated_posteriors/No_transform/Threshold_{}".format(threshold)
     os.makedirs(path, exist_ok=True)
     #infer on transformed data
     original_size = len(ATD)
@@ -24,8 +24,8 @@ def test_standard_lognormal(ATD, threshold=0.5):
     #pm.lognormal uses mu and sigma of the underlying normal distribution and is the likelihood
     
     with pm.Model() as model:
-        mu = pm.Normal('mu', mu=log_mean, sigma=2*log_std)
-        sigma = pm.HalfNormal('sigma', sigma=2*log_std)
+        mu = pm.Normal('mu', mu=10, sigma=6)
+        sigma = pm.HalfNormal('sigma', sigma=6)
 
         lognormal_obs = pm.LogNormal('obs', mu=mu, sigma=sigma, observed=ATD_filtered)
     #Run the model
@@ -90,7 +90,7 @@ def test_standard_lognormal(ATD, threshold=0.5):
 
 
 if __name__ == "__main__":
-    df = pd.read_excel('./Aslak_data.xls', sheet_name='ATD of ICAT', engine='xlrd')
+    df = pd.read_excel('./Speciale/Aslak_data.xls', sheet_name='ATD of ICAT', engine='xlrd')
 
     ATD = df['ATD'].values
 
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     plt.title("Histogram of Raw ICAT ATD Data")
     plt.xlabel("ln(ATD)")
     plt.ylabel("Density")
-    plt.savefig("Code/Plots/Raw_ICAT_Hist.png")
+    plt.savefig("./Speciale/Code/Plots/Raw_ICAT_Hist.png")
     plt.close()
     test_standard_lognormal(ATD, threshold=0)
     

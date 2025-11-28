@@ -5,19 +5,13 @@ import netCDF4
 import numpy as np
 import pandas as pd
 
-nc_file = r"C:\Users\123ti\Documents\Speciale_local\Pyfes_data\load_tide\2n2_fes2022.nc"
+nc_file = r"./Speciale/Pyfes_data/load_tide/2n2_fes2022.nc"
 ds = netCDF4.Dataset(nc_file)
 lats = ds['lat'][:]
 lons = ds['lon'][:]
 ds.close()
 
 
-# Load the grid from one of your FES netCDF files
-nc_file = r"C:\Users\123ti\Documents\Speciale_local\Pyfes_data\load_tide\2n2_fes2022.nc"
-ds = netCDF4.Dataset(nc_file)
-lats = ds['lat'][:]
-lons = ds['lon'][:]  # 0 to 360
-ds.close()
 
 def closest_grid(array, value):
     """Return the closest value in array to the given value."""
@@ -60,12 +54,12 @@ bbox = bounding_box(lat_station, lon_station, delta_lat=5, delta_lon=5)
 print("Bounding box aligned to FES grid:", bbox)
 
 
-path = r"C:\Users\123ti\Documents\Speciale_local\Pyfes_data"
+path = r"./Speciale/Pyfes_data"
 os.chdir(path)
 
-cfg = pyfes.load_config(os.path.join(path, "fes2022.yaml"), bbox=bbox)
+cfg = pyfes.load_config("fes2022.yaml", bbox=bbox)
 
-date = np.datetime64('1929-09-24T00:00:00')
+date = np.datetime64('1926-09-14T00:00:00')
 
 dates = np.arange(
     date, date + np.timedelta64(10, 'D'), np.timedelta64(1, 'h')
@@ -96,7 +90,7 @@ for ix, dt in enumerate(dates_pd):
         f'{tide[ix] + lp[ix] + load[ix]:>10.3f} {load[ix]:>10.3f}'
     )
 #compare with measurements
-key_west = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_local\Pyfes_data\Key_west_measurements.csv", header=None, names=['Year', 'Month', 'Day', 'Hour', 'WaterLevel'])
+key_west = pd.read_csv(r"Key_west_measurements.csv", header=None, names=['Year', 'Month', 'Day', 'Hour', 'WaterLevel'])
 key_west['DateTime'] = pd.to_datetime(key_west[['Year', 'Month', 'Day', 'Hour']])
 #convert mm to meters
 key_west['WaterLevel'] = key_west['WaterLevel'] / 1000
