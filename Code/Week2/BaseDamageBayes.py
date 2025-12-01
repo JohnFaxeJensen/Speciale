@@ -93,18 +93,27 @@ def test_standard_normal(data):
     plt.show()
 
 def hurricane_physical_model(df):
+    path = r"./Speciale/Code/Week2/Plots"
+
     # Clean data
     df_clean = df[df['basedamage'] > 0].copy()
     df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
     
     # Prepare variables
-    log_data = np.log(df_clean['basedamage'])
+    log_BD = np.log(df_clean['basedamage'])
     ATD = df_clean['ATD'].values
     population = df_clean['population'].values
     WPC = df_clean['WPC'].values
     wind_speed = df_clean['lf_wind'].values
     pressure = df_clean['lf_pressure'].values
+    areas = ATD/np.exp(log_BD)*population*WPC
+    
 
+    pressure_centered = pressure - np.mean(pressure)
+    wind_speed_centered = wind_speed - np.mean(wind_speed)
+    filename = "alpha_population_wind_pressure" #_population"
+    os.makedirs(filename, exist_ok=True)
+    path = os.path.join(r"./Speciale/Code/Week2/Plots", filename)
     with pm.Model() as model:
         # Priors for the linear combination
         alpha = pm.Normal("alpha", mu=15, sigma=10)
@@ -113,21 +122,23 @@ def hurricane_physical_model(df):
         pressure_coef = pm.Normal("pressure_coef", mu=0,sigma=2)
         
         # Linear combination of parameters (like your supervisor suggested)
-        mu = (alpha )+wind_speed_coef*wind_speed+pressure_coef*pressure
-        
-        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=log_data)
+        mu = alpha  + np.log(population*WPC/areas) +  wind_speed_coef * wind_speed_centered +pressure_coef * pressure_centered #+
+
+        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=log_BD)
         
         trace = pm.sample(draws=2500, tune=1000, target_accept=0.95)
         summary = az.summary(trace, hdi_prob=0.95)
+        summary.to_csv(os.path.join(path, filename + ".csv"))
         print(summary)
 
     # Plot traces
     az.plot_trace(trace, var_names=["alpha", "sigma", "wind_speed_coef", "pressure_coef"], figsize=(12, 12))
-    plt.show()
+    plt.savefig(os.path.join(path, filename + "trace.png"))
     
     az.plot_pair(trace, var_names=["alpha", "sigma", "wind_speed_coef", "pressure_coef"], 
                  kind="kde", marginals=True, divergences=True)
-    plt.show()
+    plt.savefig(os.path.join(path, filename + "pair.png"))
+    #plt.show()
     
     # Posterior predictive check
     with model:
@@ -136,16 +147,16 @@ def hurricane_physical_model(df):
     ppc_values = ppc.posterior_predictive['obs'].values.flatten()
     
     # Histogram comparison
-    combined = np.concatenate([log_data, ppc_values])
-    bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(log_data))), 25))
+    combined = np.concatenate([log_BD, ppc_values])
+    bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(log_BD))), 25))
     plt.figure(figsize=(10,6))
-    plt.hist(log_data, bins=bins, density=True, alpha=0.5, label="Observed")
+    plt.hist(log_BD, bins=bins, density=True, alpha=0.5, label="Observed")
     plt.hist(ppc_values, bins=bins, density=True, alpha=0.5, label="Posterior predictive")
     plt.xlabel("ln(Base Damage)")
     plt.ylabel("Density")
     plt.title("Posterior Predictive Histogram")
     plt.legend()
-    plt.show()
+    #plt.show()
     
     return trace
 
