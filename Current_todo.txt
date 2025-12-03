@@ -1,0 +1,6 @@
+-Add travel speed
+-Add tide-dependency
+-Add prior knowledge(wind speed) and try new model
+-Try weighting the wind and pressure terms.
+-Implement upper limit into distribution
+-Add exposure to model

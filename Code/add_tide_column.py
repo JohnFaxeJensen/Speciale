@@ -4,10 +4,9 @@ import pyfes
 import netCDF4
 import numpy as np
 import pandas as pd
-data = pd.read_excel("./Speciale/Aslak_data.xls", sheet_name='ATD of ICAT', engine='xlrd')
+cwd = os.getcwd()
+data = pd.read_excel("./Speciale/Hurricane_data/Aslak_data.xls", sheet_name='ATD of ICAT', engine='xlrd')
 data['lf_ISO_TIME'] = pd.to_datetime(data['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
-
-print(data.head())
 
 nc_file = r"./Speciale/Pyfes_data/load_tide/2n2_fes2022.nc"
 ds = netCDF4.Dataset(nc_file)
@@ -58,7 +57,8 @@ def bounding_box(lat, lon, delta_lat=0.5, delta_lon=0.5):
 os.chdir(r"./Speciale/Pyfes_data")
 def simulate_tide_at_landfall(lat, lon, time):
     bbox = bounding_box(lat, lon, delta_lat=1, delta_lon=1)
-    print(time)
+    print(lat, lon, time)
+    print(bbox)
     
 
     cfg = pyfes.load_config("fes2022.yaml", bbox=bbox)
@@ -75,19 +75,23 @@ def simulate_tide_at_landfall(lat, lon, time):
     load, load_lp, flag_load = pyfes.evaluate_tide(
         cfg['radial'], date, lons, lats, num_threads=1
     )
-    print(tide)
     return tide + lp + load
 def add_tide_column(df):
+    copy_df = df.copy()
     tide_values = []
-    for index, row in df.iterrows():
+    for index, row in copy_df.iterrows():
         lat = row['lf_lat']
         lon = row['lf_lon']
         datetime = row['lf_ISO_TIME']
         tide_level = simulate_tide_at_landfall(lat, lon, datetime)
-        tide_values.append(tide_level)
-    df['Tide_Level'] = tide_values
-    return df
-add_tide_column(data.head(20))
+        tide_values.append(tide_level[0])
+    copy_df['Tide_Level'] = tide_values
+    return copy_df
+
+new_data = add_tide_column(data)
+os.chdir(cwd)
+new_data.to_csv(r"./Speciale/Hurricane_data/Aslak_data_with_tide.csv", index=False)
+new_data.to_excel(r"./Speciale/Hurricane_data/Aslak_data_with_tide.xls", index=False)
 
 
 
