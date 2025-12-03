@@ -78,9 +78,7 @@ def hurricane_physical_model(df):
     # category_1_pressure_baseline = 980 #mb
     # wind_speed = wind_speed / category_1_wind_baseline
     #pressure = pressure / category_1_pressure_baseline
-    centered_wind = wind_speed/np.mean(wind_speed)
-    centered_economic = (population*WPC/areas)/np.mean(population*WPC/areas)
-    wind_ms = wind_speed * 0.514444 #convert knots to m/s
+
     with pm.Model() as model:
         # Priors for the linear combination
         alpha = pm.Normal("alpha", mu=17, sigma=5)
@@ -88,6 +86,7 @@ def hurricane_physical_model(df):
         wind_speed_coef = pm.Normal("wind_speed_coef", mu=0, sigma=2)
         pressure_coef = pm.Normal("pressure_coef", mu=0, sigma=1) #Doesnt add much, very correlated with wind_speed_coef
         tides_coef = pm.HalfNormal("tides_coef",  sigma=0.5) #Doesnt add much
+        economic_const = pm.Normal("economic_const", mu=1, sigma=0.5) #Is a must to have alpha be positive
         #weight = pm.Uniform("weight", lower=0, upper=1)
         
         mu = alpha + np.log(population*WPC/areas) + pressure*pressure_coef + tides*tides_coef + wind_speed*wind_speed_coef
@@ -152,25 +151,23 @@ def hurricane_physical_model_APLR(df):
         # Priors for the linear combination
         alpha = pm.Normal("alpha", mu=0, sigma=5)
         sigma = pm.HalfNormal("sigma", sigma=7)
-        wind_speed_coef = pm.Normal("wind_speed_coef", mu=0, sigma=2)
-        #pressure_coef = pm.Normal("pressure_coef", mu=0, sigma=1) #Doesnt add much, very correlated with wind_speed_coef
-        #economic_const = pm.Normal("economic_const", mu=1, sigma=0.5) #Is a must to have alpha be positive
+        pressure_coef = pm.Normal("pressure_coef", mu=0, sigma=1) #Doesnt add much, very correlated with wind_speed_coef
         tides_coef = pm.HalfNormal("tides_coef",  sigma=0.5) #Doesnt add much
         b = pm.TruncatedNormal("b", mu=40.0, sigma=15.0, lower=1e-3)
         a = pm.TruncatedNormal("a", mu=10**(-3.5), sigma=1, lower=1e-8, upper=1e-2)
         c = pm.TruncatedNormal("c", mu=10.0, sigma=2.0, lower=0.1)
 
-        mu = alpha + np.log(1/areas) + np.log((wind_ms/b)**c + a) +tides*tides_coef
-        obs = pm.LogNormal("obs", mu=mu, sigma=sigma, observed=APLR)
+        mu = alpha + np.log(WPC*population/areas) + np.log(((wind_ms/b)**c + a)*WPC*population) +tides*tides_coef #+ pressure*pressure_coef
+        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=np.log(BD))
         
         trace = pm.sample(draws=2500, tune=1000, target_accept=0.95)
         summary = az.summary(trace, hdi_prob=0.95)
         print(summary)
 
     # Plot traces
-    az.plot_trace(trace, var_names=["alpha", "sigma", ], figsize=(12, 12))
+    az.plot_trace(trace, var_names=["alpha", "sigma", "pressure_coef", "tides_coef" ], figsize=(12, 12))
     plt.show()
-    az.plot_pair(trace, var_names=["alpha", "sigma"], 
+    az.plot_pair(trace, var_names=["alpha", "sigma", "pressure_coef", "tides_coef"], 
                  kind="kde", marginals=True, divergences=True)
     plt.show()
     
@@ -179,12 +176,12 @@ def hurricane_physical_model_APLR(df):
         ppc = pm.sample_posterior_predictive(trace)
     
     ppc_values = ppc.posterior_predictive['obs'].values.flatten()
-    log_APLR = np.log(APLR)
+    log_BD = np.log(BD)
     # Histogram comparison
-    combined = np.concatenate([log_APLR, np.log(ppc_values)])
-    bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(log_APLR))), 25))
+    combined = np.concatenate([log_BD, np.log(ppc_values)])
+    bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(log_BD))), 25))
     plt.figure(figsize=(10,6))
-    plt.hist(log_APLR, bins=bins, density=True, alpha=0.5, label="Observed")
+    plt.hist(log_BD, bins=bins, density=True, alpha=0.5, label="Observed")
     plt.hist(np.log(ppc_values), bins=bins, density=True, alpha=0.5, label="Posterior predictive")
     plt.xlabel("ln(Base Damage)")
     plt.ylabel("Density")
@@ -193,6 +190,8 @@ def hurricane_physical_model_APLR(df):
     plt.show()
     
     return trace
+
+
 if __name__ == "__main__":
     #Example usage
     #df = pd.read_excel('./Speciale/Hurricane_data/Aslak_data.xls', sheet_name='ATD of ICAT', engine='xlrd')
@@ -208,4 +207,5 @@ if __name__ == "__main__":
     plt.savefig("./Speciale/Code/Week2/Plots/BaseDamage_histogram.png")
     plt.close()
 
-    hurricane_physical_model(df)
+    #hurricane_physical_model_APLR(df)
+    hurricane_physical_model_APLR(df)
