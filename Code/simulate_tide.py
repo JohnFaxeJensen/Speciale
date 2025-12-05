@@ -67,10 +67,10 @@ dates = np.arange(
 lons = np.full(dates.shape, lon_station)
 lats = np.full(dates.shape, lat_station)
 
-tide, lp, flag_tide = pyfes.evaluate_tide(
+tide, lp, flag_tide = pyfes.evaluate_tide( #Tidal elevation short period and long period
     cfg['tide'], dates, lons, lats, num_threads=1
 )
-load, load_lp, flag_load = pyfes.evaluate_tide(
+load, load_lp, flag_load = pyfes.evaluate_tide( #Crust compression load tide short and long period
     cfg['radial'], dates, lons, lats, num_threads=1
 )
 print(f'Tide evaluation flags: tide={flag_tide}, load={flag_load}')

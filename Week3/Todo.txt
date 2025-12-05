@@ -1,0 +1,17 @@
+Kig på area of destruction tides, lav map og se om der er forskel lokalt.
+
+-Get travelspeed out ibtracks database. 
+dwdt og dpdt. bruges til rapid itensification
+
+smid tidsled på, e^k*delta*t.
+
+-pymc model selection. arviz.plot_compare
+
+-For pop ud og area. sæt et standard area og beregn pop i forskellige områder.
+
+
+-rapid itensification evt
+
+-evt smid temperatur ind.
+
+-Evt smid topography

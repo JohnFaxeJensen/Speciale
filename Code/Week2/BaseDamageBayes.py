@@ -12,45 +12,6 @@ from io import StringIO
 
 
 
-
-def test_standard_normal(data):
-    log_data = np.log(data)
-
-    with pm.Model() as model:
-        mu = pm.Normal("mu", mu=15, sigma=10)
-        sigma = pm.HalfNormal("sigma", sigma=10)
-        
-        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=log_data)
-        
-
-        
-        trace = pm.sample( draws=2500, tune=1000, target_accept=0.95)
-
-
-
-    
-
-    az.plot_trace(trace, var_names=["mu", "sigma"], figsize=(12, 12))
-    plt.show()
-    az.plot_pair(trace, var_names=["mu", "sigma"], kind="kde", marginals=True, divergences=True)
-    plt.show()
-    with model:
-        ppc = pm.sample_posterior_predictive(trace)
-    ppc_values = ppc.posterior_predictive['obs'].values.flatten()
-    # -----------------------
-    # Method 1: Standard plt.hist
-    # -----------------------
-    combined = np.concatenate([np.log(data), ppc_values])
-    bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(data))), 25))
-    plt.figure(figsize=(10,6))
-    plt.hist(log_data, bins=bins, density=True, alpha=0.5, label="Observed")
-    plt.hist(ppc_values, bins=bins, density=True, alpha=0.5, label="Posterior predictive")
-    plt.xlabel("ln(ATD)")
-    plt.ylabel("Density")
-    plt.title("Posterior Predictive Histogram (plt.hist)")
-    plt.legend()
-    plt.show()
-
 def hurricane_physical_model(df):
     path = r"./Speciale/Code/Week2/Plots"
 
@@ -68,28 +29,34 @@ def hurricane_physical_model(df):
     areas = ATD/np.exp(log_BD)*population*WPC
     tides = df_clean['Tide_Level'].values
     tides = tides
-    
+    timestamps = df_clean['lf_ISO_TIME'].values 
+    years = pd.to_datetime(timestamps).year
+    years = [int(year - int(years[0])) for year in years]
+
 
     filename = "test" #_population"
     path = os.path.join(r"./Speciale/Code/Week2/Plots", filename)
     os.makedirs(path, exist_ok=True)
 
-    # category_1_wind_baseline = 74*0.868976242 #convert mph to knots
-    # category_1_pressure_baseline = 980 #mb
-    # wind_speed = wind_speed / category_1_wind_baseline
-    #pressure = pressure / category_1_pressure_baseline
+    category_1_wind_baseline = 95*0.868976242 #convert mph to knots
+    category_1_pressure_baseline = 980 #mb
+    wind_speed = wind_speed / category_1_wind_baseline
+    pressure = pressure / category_1_pressure_baseline
 
     with pm.Model() as model:
         # Priors for the linear combination
         alpha = pm.Normal("alpha", mu=17, sigma=5)
-        sigma = pm.HalfNormal("sigma", sigma=7)
-        wind_speed_coef = pm.Normal("wind_speed_coef", mu=0, sigma=2)
-        pressure_coef = pm.Normal("pressure_coef", mu=0, sigma=1) #Doesnt add much, very correlated with wind_speed_coef
-        tides_coef = pm.HalfNormal("tides_coef",  sigma=0.5) #Doesnt add much
-        economic_const = pm.Normal("economic_const", mu=1, sigma=0.5) #Is a must to have alpha be positive
-        #weight = pm.Uniform("weight", lower=0, upper=1)
+        sigma = pm.HalfNormal("sigma", sigma=5)
         
-        mu = alpha + np.log(population*WPC/areas) + pressure*pressure_coef + tides*tides_coef + wind_speed*wind_speed_coef
+        wind_speed_coef = pm.Normal("wind_speed_coef", sigma=2)
+        # Define positive version, then make negative
+        pressure_coef = pm.Normal("pressure_coef", sigma=2)
+        tides_coef = pm.Normal("tides_coef",  sigma=0.5) #Doesnt add much
+        economic_coef = pm.Normal("economic_coef", sigma=1)
+        #trend_coef = pm.Normal("trend_coef", sigma=4)
+
+        mu = alpha + economic_coef*np.log(population*WPC/areas) + pressure*pressure_coef + tides*tides_coef + wind_speed*wind_speed_coef \
+                #+ trend_coef*years
         obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=log_BD)
         
         trace = pm.sample(draws=2500, tune=1000, target_accept=0.95)
@@ -98,14 +65,13 @@ def hurricane_physical_model(df):
         print(summary)
 
     # Plot traces
-    az.plot_trace(trace, var_names=["alpha", "sigma", "wind_speed_coef", "pressure_coef", "tides_coef" ], figsize=(12, 12))
+    az.plot_trace(trace, var_names=["alpha", "sigma", "wind_speed_coef", "pressure_coef", "tides_coef", "economic_coef"], figsize=(12, 12))
     plt.savefig(os.path.join(path, filename + "trace.png"))
     
-    az.plot_pair(trace, var_names=["alpha", "sigma", "wind_speed_coef", "pressure_coef", "tides_coef"], 
+    az.plot_pair(trace, var_names=["alpha", "sigma", "wind_speed_coef", "pressure_coef", "tides_coef", "economic_coef"], 
                  kind="kde", marginals=True, divergences=True)
     plt.savefig(os.path.join(path, filename + "pair.png"))
     #plt.show()
-    
     # Posterior predictive check
     with model:
         ppc = pm.sample_posterior_predictive(trace)
@@ -144,44 +110,47 @@ def hurricane_physical_model_APLR(df):
     areas = ATD/BD*population*WPC
     tides = df_clean['Tide_Level'].values
     APLR = df_clean['APLR'].values
-    
+    category_1_wind_baseline = 74*0.868976242 #convert mph to knots
+    category_1_pressure_baseline = 980 #mb
+    wind_speed = wind_speed / category_1_wind_baseline
+    pressure = pressure / category_1_pressure_baseline
 
     wind_ms = wind_speed * 0.514444 #convert knots to m/s
     with pm.Model() as model:
         # Priors for the linear combination
         alpha = pm.Normal("alpha", mu=0, sigma=5)
         sigma = pm.HalfNormal("sigma", sigma=7)
-        pressure_coef = pm.Normal("pressure_coef", mu=0, sigma=1) #Doesnt add much, very correlated with wind_speed_coef
-        tides_coef = pm.HalfNormal("tides_coef",  sigma=0.5) #Doesnt add much
+        pressure_coef_pos = pm.HalfNormal("pressure_coef_pos", sigma=2)
+        pressure_coef = pm.Deterministic("pressure_coef", -pressure_coef_pos)#Doesnt add much, very correlated with wind_speed_coef
+        tides_coef = pm.Normal("tides_coef",  sigma=0.5) #Doesnt add much
         b = pm.TruncatedNormal("b", mu=40.0, sigma=15.0, lower=1e-3)
         a = pm.TruncatedNormal("a", mu=10**(-3.5), sigma=1, lower=1e-8, upper=1e-2)
         c = pm.TruncatedNormal("c", mu=10.0, sigma=2.0, lower=0.1)
 
-        mu = alpha + np.log(WPC*population/areas) + np.log(((wind_ms/b)**c + a)*WPC*population) +tides*tides_coef #+ pressure*pressure_coef
-        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=np.log(BD))
+        mu = alpha + np.log(1/areas) + np.log(((wind_ms/b)**c + a)) +tides*tides_coef + pressure*pressure_coef
+        obs = pm.LogNormal("obs", mu=mu, sigma=sigma, observed=APLR)
         
         trace = pm.sample(draws=2500, tune=1000, target_accept=0.95)
         summary = az.summary(trace, hdi_prob=0.95)
         print(summary)
 
     # Plot traces
-    az.plot_trace(trace, var_names=["alpha", "sigma", "pressure_coef", "tides_coef" ], figsize=(12, 12))
+    az.plot_trace(trace, var_names=["alpha", "sigma", "a", "b", "c", "tides_coef" ], figsize=(12, 12))
     plt.show()
-    az.plot_pair(trace, var_names=["alpha", "sigma", "pressure_coef", "tides_coef"], 
+    az.plot_pair(trace, var_names=["alpha", "sigma", "a", "b", "c", "tides_coef"], 
                  kind="kde", marginals=True, divergences=True)
     plt.show()
-    
+
     # Posterior predictive check
     with model:
         ppc = pm.sample_posterior_predictive(trace)
-    
+
     ppc_values = ppc.posterior_predictive['obs'].values.flatten()
-    log_BD = np.log(BD)
     # Histogram comparison
-    combined = np.concatenate([log_BD, np.log(ppc_values)])
-    bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(log_BD))), 25))
+    combined = np.concatenate([np.log(APLR), np.log(ppc_values)])
+    bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(np.log(APLR)))), 25))
     plt.figure(figsize=(10,6))
-    plt.hist(log_BD, bins=bins, density=True, alpha=0.5, label="Observed")
+    plt.hist(np.log(APLR), bins=bins, density=True, alpha=0.5, label="Observed")
     plt.hist(np.log(ppc_values), bins=bins, density=True, alpha=0.5, label="Posterior predictive")
     plt.xlabel("ln(Base Damage)")
     plt.ylabel("Density")
@@ -208,4 +177,6 @@ if __name__ == "__main__":
     plt.close()
 
     #hurricane_physical_model_APLR(df)
-    hurricane_physical_model_APLR(df)
+    hurricane_physical_model(df)
+
+
