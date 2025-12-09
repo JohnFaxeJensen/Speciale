@@ -47,8 +47,8 @@ def bounding_box(lat, lon, delta_lat=0.5, delta_lon=0.5):
 
 
 
-lat_station = 24.553
-lon_station = -81.808  # Key West
+lat_station = 36.18300
+lon_station = -75.74000  # Duck pier NC
 
 bbox = bounding_box(lat_station, lon_station, delta_lat=5, delta_lon=5)
 print("Bounding box aligned to FES grid:", bbox)
@@ -59,7 +59,8 @@ os.chdir(path)
 
 cfg = pyfes.load_config("fes2022.yaml", bbox=bbox)
 
-date = np.datetime64('1926-09-14T00:00:00')
+
+date = np.datetime64('2005-09-23T00:00:00')
 
 dates = np.arange(
     date, date + np.timedelta64(10, 'D'), np.timedelta64(1, 'h')
@@ -90,7 +91,7 @@ for ix, dt in enumerate(dates_pd):
         f'{tide[ix] + lp[ix] + load[ix]:>10.3f} {load[ix]:>10.3f}'
     )
 #compare with measurements
-key_west = pd.read_csv(r"Key_west_measurements.csv", header=None, names=['Year', 'Month', 'Day', 'Hour', 'WaterLevel'])
+key_west = pd.read_csv(r"Duck_measurements.csv", header=None, names=['Year', 'Month', 'Day', 'Hour', 'WaterLevel'])
 key_west['DateTime'] = pd.to_datetime(key_west[['Year', 'Month', 'Day', 'Hour']])
 #convert mm to meters
 key_west['WaterLevel'] = key_west['WaterLevel'] / 1000

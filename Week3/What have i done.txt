@@ -1,0 +1,3 @@
+I compute travelspeed for all locations. Im using geopy to account for that we are on a spherical figure. I havent considered elevation because i assume that is irrelevant close to the eastcost.
+
+Regarding the tide im unsure, i can actually use the data from pyfes. Because regarding the bayesian inference there is not really any trend even though one could expect that having a tide could be a root to more damage. The plot between the measuring station and the pyfes model shows some consistency but also show that they dont match perfectly, and specifically also when one inspects times near a landfall, here they dont align which is nice and what we expect, but does not in general seem to be any correlation between dama

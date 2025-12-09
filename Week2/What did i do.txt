@@ -1,0 +1,3 @@
+Jeg prøvede at fitte basedamage til min model som kan ses på billedet. Havde problemer med at fortolke på, hvordan man egentlig skal gøre. Men skal ikke nødvendigvis fitte en parameter ad gangen, fordi kombinationen af led er vigtig fordi det kan være med til at fortælle om varibiliteten mellem de individuelle parametre. Correlation mellem de enkelte parametre kan ses i pair-plotsene. Hvis plottet er meget cirkulært er der ikke rigtig en correlation, hvis det er mere ellipseformet og udstrækt er de meget korreleret.
+
+Jeg prøvede at bruge bayesian inference til at fitte da

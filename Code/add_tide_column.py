@@ -4,6 +4,7 @@ import pyfes
 import netCDF4
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 cwd = os.getcwd()
 data = pd.read_excel("./Speciale/Hurricane_data/Aslak_data.xls", sheet_name='ATD of ICAT', engine='xlrd')
 data['lf_ISO_TIME'] = pd.to_datetime(data['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
@@ -66,7 +67,7 @@ def simulate_tide_at_landfall(lat, lon, time):
     date = np.array([time.to_datetime64()])
 
 
-    lons = np.full(date.shape, lon)
+    lons = np.full(date.shape, lon % 360)
     lats = np.full(date.shape, lat)
 
     tide, lp, flag_tide = pyfes.evaluate_tide(
@@ -91,7 +92,6 @@ def add_tide_column(df):
 new_data = add_tide_column(data)
 os.chdir(cwd)
 new_data.to_csv(r"./Speciale/Hurricane_data/Aslak_data_with_tide.csv", index=False)
-new_data.to_excel(r"./Speciale/Hurricane_data/Aslak_data_with_tide.xls", index=False)
 
 
 

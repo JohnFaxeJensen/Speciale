@@ -7,7 +7,7 @@ smid tidsled på, e^k*delta*t.
 
 -pymc model selection. arviz.plot_compare
 
--For pop ud og area. sæt et standard area og beregn pop i forskellige områder.
+-For pop ud og area. sæt et standard area og beregn pop i forskellige områder. Aslak beregnede area ved at sætte BD=WPC*pop, og så hvor stor en cirkel han skulle lave fra landfall punktet i et pop map for at lige præcis nå det areal hvor der var pop gjorde at denne lighed bar opfyldt.  
 
 
 -rapid itensification evt
@@ -15,3 +15,9 @@ smid tidsled på, e^k*delta*t.
 -evt smid temperatur ind.
 
 -Evt smid topography
+
+-Prøv at kombinere wind og pressure evt.
+
+-prøv at detrende WPC*Pop growth med inflation måske. Pop burde allerede have en trend indbygget, da hvert antal er trukket fra en database der har pop fra hvert år.
+
+
