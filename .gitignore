@@ -5,6 +5,6 @@
 *.png
 
 *.adf
-/USA_HistoricalPopulationDataset 
-/USpop_m5_tif
+USA_HistoricalPopulationDataset/
+USpop_m5_tif/
 
