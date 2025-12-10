@@ -1,3 +1,10 @@
-/Pyfest_data
+/Pyfes_data
 
 *.nc
+
+*.png
+
+*.adf
+/USA_HistoricalPopulationDataset 
+/USpop_m5_tif
+

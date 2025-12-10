@@ -1,0 +1,7 @@
+Does rapid itensification need to be calculated over the whole livetime or only around landfall?
+
+Hvis vi vil detrende for inflation giver det så mening at fitte ND i stedet, og så stadigvæk inkludere et en economic coefficient? Og giver trend termet så mere mening? 
+
+Ligner helt klart at economic skal hæves i en faktor.
+
+Not detrending the economic term causes very big correlation between the trend term and the economic term. Using ND removes this correlation.

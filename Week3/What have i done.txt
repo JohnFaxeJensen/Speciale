@@ -1,3 +1,10 @@
 I compute travelspeed for all locations. Im using geopy to account for that we are on a spherical figure. I havent considered elevation because i assume that is irrelevant close to the eastcost.
 
 Regarding the tide im unsure, i can actually use the data from pyfes. Because regarding the bayesian inference there is not really any trend even though one could expect that having a tide could be a root to more damage. The plot between the measuring station and the pyfes model shows some consistency but also show that they dont match perfectly, and specifically also when one inspects times near a landfall, here they dont align which is nice and what we expect, but does not in general seem to be any correlation between dama
+
+
+Let yourself know that the population dataset is pr. decade. The population in between years is assumed to growth exponentially, so here exponential interpolation is used, unless specific cases where linear interpolation is used. Same for extrapolation in 2010's.
+
+When estimating the area im starting with an approach that is just a circle expanding from the landfall and then i try another approach where i expand more along the path of the hurricane weighting the area for higher populated tiles ore. Maybe use this: https://www.nature.com/articles/s41586-020-2867-7 to estimate an intensity decay. and then make an estimate of the radius of the hurricane
+
+Confused about Aslak said that he estimated the area by making a larger and larger circle until Basedamage = pop*WPC but apparently he set it to 10000 km^2 each time.

@@ -1,0 +1,3 @@
+Work with correlation between variables. Consider fitting residuals or using multivariate approach
+
+Here is an article talking about pressure might be a better predictor: https://journals.ametsoc.org/view/journals/bams/101/6/bamsD190062.xml#d18235212e420
