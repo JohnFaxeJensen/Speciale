@@ -6,9 +6,15 @@
     <MDI key="PyramidResamplingType">NEAREST</MDI>
   </Metadata>
   <PAMRasterBand band="1">
-    <NoDataValue le_hex_equiv="000000E0FFFFEFC7">-3.40282346638529E+038</NoDataValue>
+    <NoDataValue le_hex_equiv="000000E0FFFFEFC7">-3.40282346638529E+38</NoDataValue>
     <Metadata>
       <MDI key="SourceBandIndex">0</MDI>
+      <MDI key="STATISTICS_APPROXIMATE">YES</MDI>
+      <MDI key="STATISTICS_MAXIMUM">26728.75</MDI>
+      <MDI key="STATISTICS_MEAN">40.644943873135</MDI>
+      <MDI key="STATISTICS_MINIMUM">0</MDI>
+      <MDI key="STATISTICS_STDDEV">294.95042329075</MDI>
+      <MDI key="STATISTICS_VALID_PERCENT">40.07</MDI>
     </Metadata>
   </PAMRasterBand>
 </PAMDataset>

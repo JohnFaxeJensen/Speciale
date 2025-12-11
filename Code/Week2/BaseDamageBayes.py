@@ -59,7 +59,7 @@ def hurricane_physical_model(df, use_ND=False, model_spec=None):
 
     # Create model name based on spec
     spec_parts = [k for k, v in model_spec.items() if v]
-    model_name = "full" if len(spec_parts) == len(model_spec) else "_".join(spec_parts)
+    model_name = "_".join(spec_parts)
     
     filename = f"hurricane_model_{model_name}"
     model_path = os.path.join(r"./Speciale/Code/Week2/Plots", filename)
@@ -80,7 +80,7 @@ def hurricane_physical_model(df, use_ND=False, model_spec=None):
         mu = alpha
         
         if model_spec.get("economic", False):
-            economic_coef = pm.Normal("economic_coef", sigma=2)
+            economic_coef = pm.Normal("economic_coef", sigma=3)
             mu = mu + economic_coef*np.log(population*WPC/area)
         
         if model_spec.get("pressure", False):
@@ -88,19 +88,19 @@ def hurricane_physical_model(df, use_ND=False, model_spec=None):
             mu = mu + pressure*pressure_coef
         
         if model_spec.get("tides", False):
-            tides_coef = pm.Normal("tides_coef", sigma=2)
+            tides_coef = pm.Normal("tides_coef", sigma=3)
             mu = mu + tides*tides_coef
         
         if model_spec.get("wind", False):
-            wind_speed_coef = pm.Normal("wind_speed_coef", sigma=2)
+            wind_speed_coef = pm.Normal("wind_speed_coef", sigma=3)
             mu = mu + wind_speed*wind_speed_coef
         
         if model_spec.get("travel_speed", False):
-            travel_speed_coef = pm.Normal("travel_speed_coef", sigma=2)
+            travel_speed_coef = pm.Normal("travel_speed_coef", sigma=3)
             mu = mu + travel_speed_coef*travel_speed
 
         if model_spec.get("trend", False):
-            trend_coef = pm.Normal("trend_coef", sigma=2)
+            trend_coef = pm.Normal("trend_coef", sigma=3)
             mu = mu + trend_coef*np.array(years)
         
         if model_spec.get("wind_power_law", False):
@@ -316,25 +316,39 @@ if __name__ == "__main__":
     #df = pd.read_excel('./Speciale/Hurricane_data/Aslak_data.xls', sheet_name='ATD of ICAT', engine='xlrd')
     df = pd.read_csv('./Speciale/Hurricane_data/Aslak_data_with_tide_and_travelspeed.csv')
     df_clean = df.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
+    df_clean = df_clean[df_clean['basedamage'] > 0]
     BD = np.array(df_clean['basedamage'].values)
-    BD = BD[BD > 0]  #remove non-positive values
-
+    
     plt.hist(np.log(BD), bins=20, density=True, alpha=0.6, color='g')
     plt.xlabel("ln(Base Damage)")
     plt.ylabel("Density")
     plt.title("Histogram of Base Damage")
     plt.savefig("./Speciale/Code/Week2/Plots/BaseDamage_histogram.png")
     plt.close()
+    tides = df_clean['Tide_Level'].values
+    plt.scatter(np.log(BD), tides, alpha=0.5)
+    plt.xlabel("ln(Base Damage)")
+    plt.ylabel("Tide Level")
+    plt.title("Scatter plot of ln(Base Damage) vs Tide Level")
+    plt.show()
+    plt.close()
+    travel_speed = df_clean['travel_speed_after_landfall_m_s'].values
+    plt.scatter(np.log(BD), travel_speed, alpha=0.5)
+    plt.xlabel("ln(Base Damage)")
+    plt.ylabel("Travel Speed after Landfall (m/s)")
+    plt.title("Scatter plot of ln(Base Damage) vs Travel Speed after Landfall")
+    plt.show()
     
     # Define model specifications to compare
     model_specs = [
         {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": True},   # Full 
-        {"economic": True, "pressure": True, "tides": False, "wind": True, "travel_speed": True, "trend": False},
-        {"economic": True, "pressure": True, "tides": True, "wind": False, "travel_speed": True, "trend": True, "wind_power_law": True},
-        {"economic": True, "pressure": False, "tides": False, "wind": True, "travel_speed": True, "trend": True, "pressure_power_law": True},
-        #{"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": False, "trend": True, "travel_speed_power_law": True},
-        {"economic": True, "pressure": True, "tides": False, "wind": True, "travel_speed": False, "trend": True, "tide_power_law": True},
-        {"economic": True, "pressure": False, "tides": False, "wind": False, "travel_speed": True, "trend": True, "pressure_power_law": True, "wind_power_law": True},
+        {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": False},
+        {"economic": False, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": True},
+        {"economic": True, "pressure": False, "tides": True, "wind": True, "travel_speed": True, "trend": True},
+        {"economic": True, "pressure": True, "tides": False, "wind": True, "travel_speed": True, "trend": True},
+        {"economic": True, "pressure": True, "tides": True, "wind": False, "travel_speed": True, "trend": True},
+        {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": False, "trend": True},
+        {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": False, "trend": False},
        # {"economic": False, "pressure": False, "tides": False, "wind": False, "travel_speed": False, "trend": False, "wind_power_law": False, "pressure_power_law": False, "tide_power_law": False},        
     ]
     

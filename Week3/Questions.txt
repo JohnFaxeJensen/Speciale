@@ -4,4 +4,17 @@ Hvis vi vil detrende for inflation giver det så mening at fitte ND i stedet, og
 
 Ligner helt klart at economic skal hæves i en faktor.
 
-Not detrending the economic term causes very big correlation between the trend term and the economic term. Using ND removes this correlation.
+Should i detrend the economic growth with the inflation?
+
+Confused about Aslak said that he estimated the area by making a larger and larger circle until Basedamage = pop*WPC but apparently he set it to 10000 km^2 each time.
+
+Kan man estimere area of destruction på en anden måde? 
+
+Ligner udmiddelbart ikke tide og travel_speed tilfører så meget
+
+Hvilken travelspeed skal jeg bruge?
+
+Er det fint at lave exponential stigning i mellem grid cells for pop.
+
+
+
