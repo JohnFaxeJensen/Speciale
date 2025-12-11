@@ -343,12 +343,12 @@ if __name__ == "__main__":
     model_specs = [
         {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": True},   # Full 
         {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": False},
-        {"economic": False, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": True},
-        {"economic": True, "pressure": False, "tides": True, "wind": True, "travel_speed": True, "trend": True},
-        {"economic": True, "pressure": True, "tides": False, "wind": True, "travel_speed": True, "trend": True},
-        {"economic": True, "pressure": True, "tides": True, "wind": False, "travel_speed": True, "trend": True},
-        {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": False, "trend": True},
-        {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": False, "trend": False},
+        {"economic": True, "pressure": True, "tides": False, "wind": True, "travel_speed": False, "trend": True},
+        #{"economic": True, "pressure": False, "tides": True, "wind": True, "travel_speed": True, "trend": True},
+        #{"economic": True, "pressure": True, "tides": False, "wind": True, "travel_speed": True, "trend": True},
+        #{"economic": True, "pressure": True, "tides": True, "wind": False, "travel_speed": True, "trend": True},
+        #{"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": False, "trend": True},
+        #{"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": False, "trend": False},
        # {"economic": False, "pressure": False, "tides": False, "wind": False, "travel_speed": False, "trend": False, "wind_power_law": False, "pressure_power_law": False, "tide_power_law": False},        
     ]
     

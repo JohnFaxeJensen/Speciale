@@ -16,5 +16,7 @@ Hvilken travelspeed skal jeg bruge?
 
 Er det fint at lave exponential stigning i mellem grid cells for pop.
 
+Hvad er den bedste måde at arbejde med coralerede varible
+
 
 

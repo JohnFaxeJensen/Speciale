@@ -1,0 +1,13 @@
+Ny variation: temperaturen mdr sst. average temperature i kasse i havet tæt på østkysten med den mexicanske golf.
+
+ global average temperature.
+
+climexp.knmi climate explore.
+
+Maybe combine pressure wind term to avoid correlation equation on, start with simple model.
+
+Prøve sals model.
+
+Inverse barometer effekt prøv at kombinere med tide.
+
+Hvordan afhænger residualet af sigmar med variable.
