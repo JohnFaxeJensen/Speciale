@@ -1,0 +1,60 @@
+﻿WindPressure Modeling: Key Points and Next Steps
+
+Context and scaling
+- Outcome: ln(Base Damage).
+- Wind normalization: by Category‑1 baseline (≈ 82.55 kt). A 1.0 change equals a Cat‑1 increment.
+- Pressure normalization: by 980 mb.
+
+Orthogonal residualization result
+- Constructed: wind_residual = wind_obs − E[wind|modelled_wind] via linear regression.
+- Diagnostic: corr(modelled_wind, wind_residual) ≈ 2.4e−16 → orthogonality achieved.
+- Plot shows centered residuals with no clear curvature → residualization behaved as intended.
+
+Coefficient interpretation (example from recent run)
+- modelled_wind_coef ≈ 5.15 (sd ≈ 0.42): strong, precise positive effect.
+  - Damage multiplier for Δ wind: exp(5.15  Δ). Example: Δ = 0.25   3.57 damage.
+- wind_residual_coef  0.35 (sd  1.01): wide, includes 0  little stable signal beyond physics-based wind.
+
+Implications
+- Physics-first story: calibrated pressurewind mapping captures most damage-relevant intensity; extra wind deviations contribute little after controlling for the physics term.
+- Practical modeling: keep modelled_wind as the primary driver; consider dropping wind_residual unless diagnostics show structure with damage.
+
+When wind-only is sufficient
+- For pure prediction with reliable wind: wind_obs alone is often enough; adding raw pressure tends to add collinearity without improving out-of-sample fit.
+- Keep a wind-only baseline spec for comparison (use WAIC/LOO).
+
+When pressure still adds value
+- Interpretability and causal story (barometric mechanism).
+- Missing or biased wind observations.
+- Robustness via latent intensity: treat wind and pressure as measurements of a shared latent S.
+
+Decoupling options (interpretable alternatives to PCA)
+- Physics + deviation: modelled_wind + wind_residual (current approach; orthogonal by construction).
+- Wind-centric: wind_obs + pressure_resid, where pressure_resid = pressure  E[pressure|wind_obs] (e.g., LOWESS).
+- Latent intensity: introduce S, use measurement models for wind and pressure; damage depends on S.
+- Regularization: group horseshoe or stronger Normal priors if keeping both raw wind and pressure.
+
+Nonlinearity considerations
+- If damage response is convex in wind, add modelled_wind^2 or a spline on wind in the damage equation.
+- If wind_obs vs modelled_wind shows curvature, residualize using quadratic or LOWESS E[wind|modelled_wind].
+
+Diagnostics checklist
+- corr(modelled_wind, wind_residual)  0 (met).
+- Residuals vs modelled_wind: no trend/curvature (met visually).
+- Residuals vs ln(damage): no structure  consider dropping residual term.
+- Coefficient pair plots: severe anti-correlation suggests decorrelation or stronger shrinkage.
+- WAIC/LOO and Pareto-k: prefer specs with better out-of-sample performance.
+
+Recommended specs to compare
+- Wind-only baseline: {economic, tides, wind_obs, travel_speed, trend}
+- Physics-first: {economic, tides, modelled_wind, travel_speed, trend}
+- Optional wind-centric residual: add pressure_resid to wind_obs spec
+- Optional nonlinearity: add modelled_wind^2 to the physics-first spec
+
+Interpretation formula
+- Percent change from wind Δ (normalized): 100  (exp(coef  Δ)  1).
+
+
+corr(modelled_wind, residual_wind) ≈ 2.4e-16 means the residualization worked perfectly. The two predictors are orthogonal, so you’ve eliminated collinearity while keeping interpretability.
+If wind_speed_coef_residual remains near zero with wide SD, drop the residual term and keep modelled_wind as the intensity driver. Your earlier summary suggests the physics-based wind carries the signal.
+Keep the economic, tides, travel speed, and trend as you already do; interpret modelled_wind_coef per Cat‑1 normalized unit: damage multiplier = exp(coef × Δ)

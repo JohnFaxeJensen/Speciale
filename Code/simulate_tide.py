@@ -50,6 +50,9 @@ def bounding_box(lat, lon, delta_lat=0.5, delta_lon=0.5):
 lat_station = 36.18300
 lon_station = -75.74000  # Duck pier NC
 
+# lat_station = 24.55300
+# lon_station = -81.80800  # Key West FL
+
 bbox = bounding_box(lat_station, lon_station, delta_lat=5, delta_lon=5)
 print("Bounding box aligned to FES grid:", bbox)
 
@@ -60,10 +63,10 @@ os.chdir(path)
 cfg = pyfes.load_config("fes2022.yaml", bbox=bbox)
 
 
-date = np.datetime64('2005-09-23T00:00:00')
+date = np.datetime64('1997-08-23T00:00:00')
 
 dates = np.arange(
-    date, date + np.timedelta64(10, 'D'), np.timedelta64(1, 'h')
+    date, date + np.timedelta64(10, 'D'), np.timedelta64(20, 'm')
 )
 lons = np.full(dates.shape, lon_station)
 lats = np.full(dates.shape, lat_station)

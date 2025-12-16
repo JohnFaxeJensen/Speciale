@@ -1,3 +1,9 @@
 Work with correlation between variables. Consider fitting residuals or using multivariate approach
 
 Here is an article talking about pressure might be a better predictor: https://journals.ametsoc.org/view/journals/bams/101/6/bamsD190062.xml#d18235212e420
+
+Synthetic hurricane data:
+https://www.nature.com/articles/s41597-024-03250-y
+
+Remote sensing article:
+https://asbpa.org/publications/shore-and-beach/shore-beach-in-2019-vol-87/post-hurricane-michael-damage-assessment/

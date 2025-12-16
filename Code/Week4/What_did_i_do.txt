@@ -1,0 +1,17 @@
+Friday: I have tested a lot of different ways of combining wind and pressure to lose correlation. 
+used 3 different equations of a linear fit to see what worked best.
+Horseshoe, PCA, pressure to wind relation + residuals(best while still keeping explanatory effect).
+Why do we want to decouple even, probably to get better predictive power? 
+
+Monday: Tried multivariate approach, probably implemented wrong, implemented inverse barometer effect
+
+Tuesday: 
+
+
+The reason for maybe not seeing the tide having an effect could come from multiple things
+one thing could be because simply be that we dont have enough datapoints 
+where a stormflood can be seen. Also it is also a caveat that Aslak has defined
+a specific area of 10000 km^2, and the true effect of the storm surge which
+one could expect is depended on the tide, is probably more located towards the water.
+This may not be captured well be setting a standard error of destruction.
+And if one could specify a smaller are closer to the coast, then maybe are trend could be seen.
