@@ -8,6 +8,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.patches as mpatches
 from xarray.coders import CFDatetimeCoder  # xarray >= 2024 API
+from datetime import datetime
 
 # Input file
 nc_path = r"C:\Users\123ti\Downloads\ICOADS_R3.0.0_1900-08.nc"
@@ -33,8 +34,7 @@ nc_path = r"C:\Users\123ti\Downloads\ICOADS_R3.0.0_1900-08.nc"
 time_coder = CFDatetimeCoder(use_cftime=True)
 ds = xr.open_dataset(nc_path, decode_cf=True, decode_times=time_coder)
 
-print("First 3 decoded times:", ds["time"].values[100:110])
-print("Time dtype:", ds["time"].dtype)
+
 # Ensure longitude in 0–360 for masking
 if "lon" not in ds:
     raise KeyError("Dataset has no 'lon' coordinate.")
@@ -81,6 +81,23 @@ if vals is not None:
     lons_plot = lons_plot[~invalid_sst]
     lats = lats[~invalid_sst]
 
+# find the correct time interval:
+date = np.datetime64('1997-08-23T00:00:00')
+time_values = ds_sel['time'].values
+for t in time_values:
+    string = str(t)
+    valid_time_string = string.split('.')[0]
+    valid_time = np.datetime64(valid_time_string)
+    print(valid_time)
+quit()
+times_formated = np.array([datetime.strptime(str(t), '%Y-%m-%d %H:%M:%s') for t in time_values])
+print(times_formated)
+quit()
+allowed_time_diff = np.timedelta64(24, 'h')  # 12 hours tolerance
+time_diffs = np.abs(time_values - date)
+valid_times = np.where(time_diffs <= allowed_time_diff)[0]
+print(valid_times)
+quit()
 # Plot
 fig = plt.figure(figsize=(10, 7))
 ax = plt.axes(projection=ccrs.PlateCarree())
