@@ -96,12 +96,11 @@ def hurricane_physical_model(df,  model_spec=None):
     delta_P = (1013.25-pressure_raw)* 100  #convert to Pa
     density_water = 1000  # kg/m³
     g = 9.81  # m/s²
-    ib_vals = delta_P / (density_water * g)
+    ib_vals_raw = delta_P / (density_water * g)
 
 
     category_1_ib_baseline = (1013.25 - category_1_pressure_baseline) * 100 / (density_water * g)
-    ib_vals = ib_vals / category_1_ib_baseline
-
+    ib_vals_relative = ib_vals_raw / category_1_ib_baseline
     with pm.Model() as model:
         # Priors for the linear combination
         alpha = pm.Normal("alpha", mu=17, sigma=5)
@@ -151,9 +150,13 @@ def hurricane_physical_model(df,  model_spec=None):
             mu = mu + mv_coef[0]*wind_speed_relative + mv_coef[1]*pressure_relative
         if model_spec.get("inverse_barometer", False):
             ib_coef = pm.Normal("ib_coef", sigma=3)
-            mu = mu + ib_coef*ib_vals  # Example term for inverse barometer effect
+            mu = mu + ib_coef*ib_vals_relative  # Example term for inverse barometer effect
         if model_spec.get("raw_economic", False):
             mu = mu + np.log(population*WPC/area)
+        if model_spec.get("water_level", False):
+            water_level_coef = pm.Normal("water_level_coef", sigma=3)
+            water_level = tides + ib_vals_raw
+            mu = mu + water_level_coef*water_level
 
 
 
@@ -192,6 +195,8 @@ def hurricane_physical_model(df,  model_spec=None):
         var_names.append("mv_coef")
     if model_spec.get("inverse_barometer", False):
         var_names.append("ib_coef")
+    if model_spec.get("water_level", False):
+        var_names.append("water_level_coef")
 
     
 
@@ -431,7 +436,8 @@ if __name__ == "__main__":
         {"economic": True, "trend": True, "inverse_barometer": True},
         #{"raw_economic": True, "trend": True, "inverse_barometer": True},
         #{"economic": True, "trend": True, "inverse_barometer": True, "flood_coef": True},
-        {"economic": True, "trend": True, "inverse_barometer": True},
+        {"economic": True, "trend": True, "inverse_barometer": True, "modelled_wind": True, "pressure": True},
+        {"economic": True, "trend": True, "inverse_barometer": True, "wind": True, "pressure": True},
     ]
     
     # Run comparison
