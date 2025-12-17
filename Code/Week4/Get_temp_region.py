@@ -82,22 +82,25 @@ if vals is not None:
     lats = lats[~invalid_sst]
 
 # find the correct time interval:
-date = np.datetime64('1997-08-23T00:00:00')
+date = np.datetime64('1900-08-15T00:00:00')
 time_values = ds_sel['time'].values
+formatted_times = []
 for t in time_values:
     string = str(t)
     valid_time_string = string.split('.')[0]
     valid_time = np.datetime64(valid_time_string)
-    print(valid_time)
-quit()
-times_formated = np.array([datetime.strptime(str(t), '%Y-%m-%d %H:%M:%s') for t in time_values])
-print(times_formated)
-quit()
-allowed_time_diff = np.timedelta64(24, 'h')  # 12 hours tolerance
-time_diffs = np.abs(time_values - date)
+    formatted_times.append(valid_time)
+
+allowed_time_diff = np.timedelta64(12, 'h')  # 12 hours tolerance
+time_diffs = np.abs(np.array(formatted_times) - date)
 valid_times = np.where(time_diffs <= allowed_time_diff)[0]
-print(valid_times)
-quit()
+#print SST values at the valid times
+if vals is not None:
+    vals = vals[valid_times]
+    print(vals)
+    lons_plot = lons_plot[valid_times]
+    lats = lats[valid_times]
+
 # Plot
 fig = plt.figure(figsize=(10, 7))
 ax = plt.axes(projection=ccrs.PlateCarree())

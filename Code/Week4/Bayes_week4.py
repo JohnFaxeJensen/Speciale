@@ -425,19 +425,57 @@ if __name__ == "__main__":
     # quit()
     # Define model specifications to compare
     model_specs = [
-        #{"economic": True, "tides": True, "modelled_wind": True, "travel_speed": True, "trend": True, "inverse_barometer": True},  # Full with modelled wind and inverse barometer 
-        #{"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": True, "inverse_barometer": True},  # No modelled wind
-        #{"economic": True, "tides": True, "modelled_wind": True, "travel_speed": True, "trend": True, "inverse_barometer": False},  # Full with modelled wind and inverse barometer 
-        #{"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True, "trend": True, "inverse_barometer": False},  # No modelled wind
-        #{"economic": True, "pressure": True, "tides": True, "travel_speed": True, "trend": True, "inverse_barometer": True}, 
-        #{"economic": True, "pressure": False, "tides": True, "travel_speed": True, "wind": True, "trend": True, "inverse_barometer": True}, 
-        #{"economic": True, "pressure": False, "wind": False, "travel_speed": True, "trend": True, "inverse_barometer": True},
-        #{"economic": True, "pca": True, "travel_speed": True, "trend": True, "inverse_barometer": True},
+        # Baselines
+        {"economic": True},
+        {"economic": True, "trend": True},
+        {"raw_economic": True, "trend": True},
+        {"economic": True, "inverse_barometer": True},
         {"economic": True, "trend": True, "inverse_barometer": True},
-        #{"raw_economic": True, "trend": True, "inverse_barometer": True},
-        #{"economic": True, "trend": True, "inverse_barometer": True, "flood_coef": True},
-        {"economic": True, "trend": True, "inverse_barometer": True, "modelled_wind": True, "pressure": True},
-        {"economic": True, "trend": True, "inverse_barometer": True, "wind": True, "pressure": True},
+
+        # Single-physics with econ
+        {"economic": True, "wind": True},
+        {"economic": True, "pressure": True},
+        {"economic": True, "tides": True},
+        {"economic": True, "travel_speed": True},
+        {"economic": True, "modelled_wind": True},
+        {"economic": True, "water_level": True},
+
+        # Pairs with econ
+        {"economic": True, "wind": True, "pressure": True},
+        {"economic": True, "wind": True, "travel_speed": True},
+        {"economic": True, "pressure": True, "inverse_barometer": True},
+        {"economic": True, "tides": True, "inverse_barometer": True},
+        {"economic": True, "modelled_wind": True, "pressure": True},
+        {"economic": True, "modelled_wind": True, "travel_speed": True},
+        {"economic": True, "water_level": True, "trend": True},
+        {"economic": True, "tides": True, "trend": True},
+
+        # Trios with econ
+        {"economic": True, "wind": True, "pressure": True, "trend": True},
+        {"economic": True, "wind": True, "pressure": True, "travel_speed": True},
+        {"economic": True, "pressure": True, "tides": True, "trend": True},
+        {"economic": True, "modelled_wind": True, "pressure": True, "trend": True},
+        {"economic": True, "modelled_wind": True, "travel_speed": True, "trend": True},
+        {"economic": True, "wind": True, "inverse_barometer": True, "trend": True},
+
+        # “Full-ish” (no mixing wind with modelled_wind; water_level is exclusive)
+        {"economic": True, "wind": True, "pressure": True, "travel_speed": True, "trend": True, "inverse_barometer": True},
+        {"economic": True, "modelled_wind": True, "pressure": True, "travel_speed": True, "trend": True, "inverse_barometer": True},
+        {"economic": True, "water_level": True, "pressure": True, "travel_speed": True, "trend": True},
+
+        # PCA / Multivariate alternatives (with econ)
+        {"economic": True, "pca": True},
+        {"economic": True, "pca": True, "trend": True},
+        {"economic": True, "pca": True, "travel_speed": True},
+        {"economic": True, "multi_variate": True},
+        {"economic": True, "multi_variate": True, "trend": True},
+        {"economic": True, "multi_variate": True, "travel_speed": True},
+
+        # Physics-only (for reference)
+        {"wind": True, "pressure": True},
+        {"modelled_wind": True, "pressure": True},
+        {"water_level": True, "trend": True},
+        {"wind": True, "pressure": True, "trend": True},
     ]
     
     # Run comparison

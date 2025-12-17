@@ -6,7 +6,7 @@ climexp.knmi climate explore.
 
 Maybe combine pressure wind term to avoid correlation equation on, start with simple model.
 
-Prøve sals model.
+Prøve sals model. Use RPWC
 
 Inverse barometer effekt prøv at kombinere med tide.
 
