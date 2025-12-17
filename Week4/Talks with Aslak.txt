@@ -11,3 +11,4 @@ Prøve sals model.
 Inverse barometer effekt prøv at kombinere med tide.
 
 Hvordan afhænger residualet af sigmar med variable.
+
