@@ -1,0 +1,3 @@
+Figured out the method was quite confused about using pressure_raw and relative without forcing that the pressure term should be 0 when the. This helped a lot and showed pressure is the best proxy also what we saw why inverse_barometer effect made the best current model.
+
+Important considerations: finally understood why basedamage is nice, because the modelling itself is trying to model of basedamage scales with the economic exposure term. We have some idea that basedamage scales with how many people how lives in an area and how rich the people are right now, that makes sense. The alpha parameter can then handle any kind of nessesary normalization. Which means if we use ATD we cant use the direct definition but rather an idea on 

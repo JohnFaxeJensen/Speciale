@@ -11,11 +11,12 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
+from wind_eq_comparison import equation_11_wind
 
 #Difference between this and the week 2 is that i try to include new model terms
 #such as inverse barometer effect and using a model to transform pressure to wind speed
 
-def hurricane_physical_model(df,  model_spec=None):
+def hurricane_physical_model(df,  model_spec=None, ATD=False):
     """
     Build and fit a hurricane damage model with configurable terms.
     
@@ -44,7 +45,11 @@ def hurricane_physical_model(df,  model_spec=None):
     df_clean = df[df['basedamage'] > 0].copy()
     df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
     # Prepare variables
-    observed = np.log(df_clean['basedamage'])
+    basedamage = df_clean['basedamage'].values
+    if ATD:
+        observed = np.log(df_clean['ATD'].values)
+    else:
+        observed = np.log(basedamage)
 
 
     population = df_clean['population'].values
@@ -53,6 +58,7 @@ def hurricane_physical_model(df,  model_spec=None):
     pressure_raw = df_clean['lf_pressure'].values
     area =10000 #value set by Aslak in study
     tides = df_clean['Tide_Level'].values
+    tides_m = tides / 100  #convert cm to meters
     timestamps = df_clean['lf_ISO_TIME'].values 
     years = pd.to_datetime(timestamps).year
     years = [int(year - int(years[0])) for year in years]
@@ -67,8 +73,10 @@ def hurricane_physical_model(df,  model_spec=None):
     # Create model name based on spec
     spec_parts = [k for k, v in model_spec.items() if v]
     model_name = "_".join(spec_parts)
-    
-    filename = f"hurricane_model_{model_name}"
+    if ATD:
+        filename = f"ATD_hurricane_model_{model_name}"
+    else:
+        filename = f"hurricane_model_{model_name}"
     model_path = os.path.join(r"./Speciale/Code/Week4/Plots", filename)
     os.makedirs(model_path, exist_ok=True)
 
@@ -92,8 +100,11 @@ def hurricane_physical_model(df,  model_spec=None):
     # Use PCA components in your model
     pc1, pc2 = pca_components[:, 0], pca_components[:, 1]
     
-    #Inverse barometer effect calculation
+    #use delta_P as pressure proxy
     delta_P = (1013.25-pressure_raw)* 100  #convert to Pa
+    delta_P_baseline = (1013.25 - category_1_pressure_baseline)*100
+    delta_P_relative = delta_P / delta_P_baseline  #Pa
+    #Inverse barometer effect calculation
     density_water = 1000  # kg/m³
     g = 9.81  # m/s²
     ib_vals_raw = delta_P / (density_water * g)
@@ -111,15 +122,18 @@ def hurricane_physical_model(df,  model_spec=None):
         
         if model_spec.get("economic", False):
             economic_coef = pm.Normal("economic_coef", sigma=3)
-            mu = mu + economic_coef*np.log(population*WPC/area)
+            if ATD:
+                mu = mu + economic_coef*np.log(population*WPC/area)
+            else:
+                mu = mu + economic_coef*np.log(population*WPC/area)
         
         if model_spec.get("pressure", False):
             pressure_coef = pm.Normal("pressure_coef", sigma=3)
-            mu = mu + pressure_coef*pressure_relative
+            mu = mu + pressure_coef*delta_P_relative
         
         if model_spec.get("tides", False):
             tides_coef = pm.Normal("tides_coef", sigma=3)
-            mu = mu + tides*tides_coef
+            mu = mu + tides_m*tides_coef
         
         if model_spec.get("wind", False):
             wind_coef = pm.Normal("wind_coef", sigma=3)
@@ -130,7 +144,9 @@ def hurricane_physical_model(df,  model_spec=None):
             mu = mu + modelled_wind_coef*modelled_wind_relative
             wind_coef_residual = pm.Normal("wind_coef_residual", sigma=3)
             mu = mu + wind_coef_residual*residual_wind_relative
-
+        if model_spec.get("residual_wind", False):
+            wind_coef_residual = pm.Normal("wind_coef_residual", sigma=3)
+            mu = mu + wind_coef_residual*residual_wind_relative
         
         if model_spec.get("travel_speed", False):
             travel_speed_coef = pm.Normal("travel_speed_coef", sigma=3)
@@ -151,17 +167,22 @@ def hurricane_physical_model(df,  model_spec=None):
         if model_spec.get("inverse_barometer", False):
             ib_coef = pm.Normal("ib_coef", sigma=3)
             mu = mu + ib_coef*ib_vals_relative  # Example term for inverse barometer effect
-        if model_spec.get("raw_economic", False):
-            mu = mu + np.log(population*WPC/area)
+        if model_spec.get("economic_raw", False):
+            if ATD:
+                mu = mu + np.log((population*WPC/area))
+            else:
+                mu = mu + np.log(population*WPC/area)
         if model_spec.get("water_level", False):
             water_level_coef = pm.Normal("water_level_coef", sigma=3)
-            water_level = tides + ib_vals_raw
+            water_level = tides_m + ib_vals_raw
             mu = mu + water_level_coef*water_level
 
 
 
-        
-        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
+        if ATD:
+            obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
+        else:
+            obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
         
         trace = pm.sample(draws=2500, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True})
         summary = az.summary(trace, hdi_prob=0.95)
@@ -197,6 +218,8 @@ def hurricane_physical_model(df,  model_spec=None):
         var_names.append("ib_coef")
     if model_spec.get("water_level", False):
         var_names.append("water_level_coef")
+    if model_spec.get("residual_wind", False):
+        var_names.append("wind_coef_residual")
 
     
 
@@ -236,7 +259,7 @@ def hurricane_physical_model(df,  model_spec=None):
 
 
 
-def compare_models(df, model_specs):
+def compare_models(df, model_specs, ATD=False):
     """
     Compare multiple model specifications using WAIC and LOO.
     
@@ -262,7 +285,7 @@ def compare_models(df, model_specs):
     
     for i, spec in enumerate(model_specs, 1):
         print(f"\n[{i}/{len(model_specs)}] Fitting model with spec: {spec}")
-        trace, model_name = hurricane_physical_model(df, model_spec=spec)
+        trace, model_name = hurricane_physical_model(df, model_spec=spec, ATD=ATD)
         traces[model_name] = trace
 
     
@@ -294,106 +317,7 @@ def compare_models(df, model_specs):
     
     return comparison_df, traces
 
-def equation_11_wind(pressure, lat, travel_speed):
-    delta_p = 1015 - pressure
-    phi = np.abs(lat)
-    v_t = travel_speed  # m/s
 
-    exponent = 0.6 * (1 - delta_p/215)
-    b_s = -4.4e-5 * delta_p**2 + 0.01 * delta_p - 0.014 * phi + 0.15 * v_t**exponent + 1.0
-
-    rho = 1.15  # kg/m³
-    e = 2.71828
-    vm_mps = np.sqrt((b_s / (rho * e)) * (delta_p * 100))  # delta_p in Pa
-    wind_knots = vm_mps * 1.94384  # to knots
-    return wind_knots
-def test_pressure_to_wind_models():
-    wind = df_clean['lf_wind'].values
-    pressure = df_clean['lf_pressure'].values
-
-    # --- Model calculations ---
-    pressure_to_wind_version_1 = 2.3*(1010-pressure)**0.76*1.94384  # Eq (4) Knaff & Zehr
-    pressure_to_wind_version_2 = 3.92*(1015-pressure)**0.644*1.94384  # Eq (3) Dvorak Atlantic
-
-    # Simplified Eq (11)
-    delta_p = 1015 - pressure
-    phi = np.abs(df_clean['lf_lat'].values)
-    v_t = df_clean['travel_speed_after_landfall_m_s'].values  # m/s
-
-    # Note: The exponent in the paper is: 0.6*(1 - delta_p/215)
-    # Let's compute it correctly
-    exponent = 0.6 * (1 - delta_p/215)
-    b_s = -4.4e-5 * delta_p**2 + 0.01 * delta_p - 0.014 * phi + 0.15 * v_t**exponent + 1.0
-
-    rho = 1.15  # kg/m³
-    e = 2.71828
-    vm_mps = np.sqrt((b_s / (rho * e)) * (delta_p * 100))  # delta_p in Pa
-    pressure_to_wind_version_3 = vm_mps * 1.94384  # to knots
-
-    # --- Metrics calculation ---
-    models = {
-        'Knaff & Zehr (Eq 4)': pressure_to_wind_version_1,
-        'Dvorak Atlantic (Eq 3)': pressure_to_wind_version_2,
-        'Simplified Eq (11)': pressure_to_wind_version_3
-    }
-
-    print("=== Model Performance Metrics ===")
-    for name, modeled in models.items():
-        bias = np.mean(modeled - wind)
-        mae = mean_absolute_error(wind, modeled)
-        rmse = np.sqrt(mean_squared_error(wind, modeled))
-        r2 = r2_score(wind, modeled)
-        
-        print(f"\n{name}:")
-        print(f"  Bias: {bias:.2f} kt")
-        print(f"  MAE:  {mae:.2f} kt")
-        print(f"  RMSE: {rmse:.2f} kt")
-        print(f"  R²:   {r2:.3f}")
-        #save metrics to a file
-        df = pd.DataFrame({
-            'Model': [name],
-            'Bias (kt)': [bias],
-            'MAE (kt)': [mae],
-            'RMSE (kt)': [rmse],
-            'R²': [r2]
-        })
-        df.to_csv(f"./Speciale/Code/Week4/Plots/{name.replace(' ', '_')}_metrics.csv", index=False)
-
-    # --- 1. Scatter plot: Observed vs Modeled ---
-    plt.figure(figsize=(12, 5))
-
-    plt.subplot(1, 2, 1)
-    plt.scatter(wind, pressure_to_wind_version_1, alpha=0.6, color='b', label='Knaff & Zehr (Eq 4)', s=20)
-    plt.scatter(wind, pressure_to_wind_version_2, alpha=0.6, color='g', label='Dvorak Atlantic (Eq 3)', s=20)
-    plt.scatter(wind, pressure_to_wind_version_3, alpha=0.6, color='r', label='Simplified Eq (11)', s=20)
-    plt.plot([0, 200], [0, 200], 'k--', linewidth=1)
-    plt.xlabel("Observed Wind Speed (knots)")
-    plt.ylabel("Modeled Wind Speed (knots)")
-    plt.title("Observed vs Modeled Wind Speed")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-
-    # --- 2. Residuals plot: Modeled - Observed vs Pressure ---
-    plt.subplot(1, 2, 2)
-    residuals1 = pressure_to_wind_version_1 - wind
-    residuals2 = pressure_to_wind_version_2 - wind
-    residuals3 = pressure_to_wind_version_3 - wind
-
-    plt.scatter(pressure, residuals1, alpha=0.6, color='b', label='Knaff & Zehr', s=20)
-    plt.scatter(pressure, residuals2, alpha=0.6, color='g', label='Dvorak Atlantic', s=20)
-    plt.scatter(pressure, residuals3, alpha=0.6, color='r', label='Simplified Eq (11)', s=20)
-
-    plt.axhline(y=0, color='k', linestyle='--', linewidth=1)
-    plt.xlabel("Central Pressure (mb)")
-    plt.ylabel("Modeled - Observed Wind (knots)(residuals)")
-    plt.title("Residuals vs Central Pressure")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.gca().invert_xaxis()  # Stronger storms (lower pressure) to the right
-
-    plt.tight_layout()
-    plt.savefig("./Speciale/Code/Week4/Plots/Pressure_to_Wind_comparison_with_metrics.png", dpi=150)
-    plt.show()
 
 if __name__ == "__main__":
     #Example usage
@@ -404,7 +328,7 @@ if __name__ == "__main__":
     df_clean = df_clean[df_clean['ND'] > 0]
     BD = np.array(df_clean['basedamage'].values)
     ND = np.array(df_clean['ND'].values)
-
+    
     #Here is the wind models comparisons using models from the paper:
     #https://journals.ametsoc.org/view/journals/mwre/136/9/2008mwr2395.1.pdf
     # Your data
@@ -425,61 +349,76 @@ if __name__ == "__main__":
     # quit()
     # Define model specifications to compare
     model_specs = [
-        # Baselines
-        {"economic": True},
-        {"economic": True, "trend": True},
-        {"raw_economic": True, "trend": True},
-        {"economic": True, "inverse_barometer": True},
-        {"economic": True, "trend": True, "inverse_barometer": True},
+        {"economic": True, "trend": True, "wind": True},
+        # {"economic": True, "pressure": True, "trend": True, "inverse_barometer": True},
+        {"economic": True, "pressure": True, "trend": True},
+        {"economic": True, "pressure": True, "trend": True, "wind": True},
+        {"economic": True, "modelled_wind": True, "trend": True},
+        {"economic": True, "modelled_wind": True, "trend": True, "inverse_barometer": True},
+        {"economic": True,"pressure": True, "trend": True, "travel_speed": True},
+        {"economic": True,"pressure": True, "trend": True, "tides": True},
+        {"economic": True,"pressure": True, "trend": True, "inverse_barometer": True},
 
-        # Single-physics with econ
-        {"economic": True, "wind": True},
-        {"economic": True, "pressure": True},
-        {"economic": True, "tides": True},
-        {"economic": True, "travel_speed": True},
-        {"economic": True, "modelled_wind": True},
-        {"economic": True, "water_level": True},
+        # {"economic": True, "pressure": True, "trend": True, "residual_wind": True},
+        # {"economic": True, "pressure": True, "trend": True, "travel_speed": True},
 
-        # Pairs with econ
-        {"economic": True, "wind": True, "pressure": True},
-        {"economic": True, "wind": True, "travel_speed": True},
-        {"economic": True, "pressure": True, "inverse_barometer": True},
-        {"economic": True, "tides": True, "inverse_barometer": True},
-        {"economic": True, "modelled_wind": True, "pressure": True},
-        {"economic": True, "modelled_wind": True, "travel_speed": True},
-        {"economic": True, "water_level": True, "trend": True},
-        {"economic": True, "tides": True, "trend": True},
-
-        # Trios with econ
-        {"economic": True, "wind": True, "pressure": True, "trend": True},
-        {"economic": True, "wind": True, "pressure": True, "travel_speed": True},
-        {"economic": True, "pressure": True, "tides": True, "trend": True},
-        {"economic": True, "modelled_wind": True, "pressure": True, "trend": True},
-        {"economic": True, "modelled_wind": True, "travel_speed": True, "trend": True},
-        {"economic": True, "wind": True, "inverse_barometer": True, "trend": True},
-
-        # “Full-ish” (no mixing wind with modelled_wind; water_level is exclusive)
-        {"economic": True, "wind": True, "pressure": True, "travel_speed": True, "trend": True, "inverse_barometer": True},
-        {"economic": True, "modelled_wind": True, "pressure": True, "travel_speed": True, "trend": True, "inverse_barometer": True},
-        {"economic": True, "water_level": True, "pressure": True, "travel_speed": True, "trend": True},
-
-        # PCA / Multivariate alternatives (with econ)
-        {"economic": True, "pca": True},
-        {"economic": True, "pca": True, "trend": True},
-        {"economic": True, "pca": True, "travel_speed": True},
-        {"economic": True, "multi_variate": True},
-        {"economic": True, "multi_variate": True, "trend": True},
-        {"economic": True, "multi_variate": True, "travel_speed": True},
-
-        # Physics-only (for reference)
-        {"wind": True, "pressure": True},
-        {"modelled_wind": True, "pressure": True},
-        {"water_level": True, "trend": True},
-        {"wind": True, "pressure": True, "trend": True},
     ]
+    # model_specs_massive = [
+    #     # Baselines
+    #     {"economic": True},
+    #     {"economic": True, "trend": True},
+    #     {"raw_economic": True, "trend": True},
+    #     {"economic": True, "inverse_barometer": True},
+    #     {"economic": True, "trend": True, "inverse_barometer": True},
+
+    #     # Single-physics with econ
+    #     {"economic": True, "wind": True},
+    #     {"economic": True, "pressure": True},
+    #     {"economic": True, "tides": True},
+    #     {"economic": True, "travel_speed": True},
+    #     {"economic": True, "modelled_wind": True},
+    #     {"economic": True, "water_level": True},
+
+    #     # Pairs with econ
+    #     {"economic": True, "wind": True, "pressure": True},
+    #     {"economic": True, "wind": True, "travel_speed": True},
+    #     {"economic": True, "pressure": True, "inverse_barometer": True},
+    #     {"economic": True, "tides": True, "inverse_barometer": True},
+    #     {"economic": True, "modelled_wind": True, "pressure": True},
+    #     {"economic": True, "modelled_wind": True, "travel_speed": True},
+    #     {"economic": True, "water_level": True, "trend": True},
+    #     {"economic": True, "tides": True, "trend": True},
+
+    #     # Trios with econ
+    #     {"economic": True, "wind": True, "pressure": True, "trend": True},
+    #     {"economic": True, "wind": True, "pressure": True, "travel_speed": True},
+    #     {"economic": True, "pressure": True, "tides": True, "trend": True},
+    #     {"economic": True, "modelled_wind": True, "pressure": True, "trend": True},
+    #     {"economic": True, "modelled_wind": True, "travel_speed": True, "trend": True},
+    #     {"economic": True, "wind": True, "inverse_barometer": True, "trend": True},
+
+    #     # “Full-ish” (no mixing wind with modelled_wind; water_level is exclusive)
+    #     {"economic": True, "wind": True, "pressure": True, "travel_speed": True, "trend": True, "inverse_barometer": True},
+    #     {"economic": True, "modelled_wind": True, "pressure": True, "travel_speed": True, "trend": True, "inverse_barometer": True},
+    #     {"economic": True, "water_level": True, "pressure": True, "travel_speed": True, "trend": True},
+
+    #     # PCA / Multivariate alternatives (with econ)
+    #     {"economic": True, "pca": True},
+    #     {"economic": True, "pca": True, "trend": True},
+    #     {"economic": True, "pca": True, "travel_speed": True},
+    #     {"economic": True, "multi_variate": True},
+    #     {"economic": True, "multi_variate": True, "trend": True},
+    #     {"economic": True, "multi_variate": True, "travel_speed": True},
+
+    #     # Physics-only (for reference)
+    #     {"wind": True, "pressure": True},
+    #     {"modelled_wind": True, "pressure": True},
+    #     {"water_level": True, "trend": True},
+    #     {"wind": True, "pressure": True, "trend": True},
+    #   ]
     
     # Run comparison
-    comparison_df, traces = compare_models(df, model_specs)
+    comparison_df, traces = compare_models(df, model_specs, ATD=False)
     
     #hurricane_physical_model_APLR(df)
     #hurricane_physical_model(df, model_spec=model_specs[0])

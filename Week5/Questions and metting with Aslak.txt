@@ -1,0 +1,7 @@
+Questions and metting with Aslak:
+
+I have removed some point due to pressure missing, should we keep those and then not use the pressure variable.
+
+Was it at track start we should pick the temperature, and is it the monthly average or global average or what is it, does it matter the storm changes character DS to TS?
+
+

@@ -1,0 +1,15 @@
+Se om der er en correlation med at tryk er en bedre måling fra 1950 i forhold til det gamle data. Kan alternativt gøres også med wind/pressure equation.
+
+Global mean/Northeren hemisphere
+
+Reanalysis data. Sammenlign gennemsnittet i regionen for reanalysis datasæt.
+
+Overvej sæsoncyklus i selve modellen evt med cosinus eller sinus .
+
+Kig på Golfstrømmen monthly mean og anomaly.
+
+HadCruT 5
+
+sum log(damage) for hvert år correlation med hadsst for hver pixel til at lave map. Teleconnection map.
+
+tobias Geiger potsdam
