@@ -153,11 +153,9 @@ def plot_regions_with_genesis(regions_dict, genesis_df, out_path=None):
 
     ax.set_title("Genesis positions with Gulf/Caribbean + Atlantic MDR boxes")
     ax.legend(loc="lower left")
-
     if out_path:
         plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    else:
-        plt.show()
+    plt.show()
 
 
 if __name__ == "__main__":

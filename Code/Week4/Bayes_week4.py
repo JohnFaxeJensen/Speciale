@@ -1,22 +1,23 @@
 import pymc as pm
 import numpy as np
-import scipy.stats as stats
 import arviz as az
 from matplotlib import pyplot as plt
 import os
 import pandas as pd
-from pytensor.printing import Print
 
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from wind_eq_comparison import equation_11_wind
 
+import sys
+sys.path.append(r"./Speciale/Code")
+from merge_temp import merge_temp_data
+
 #Difference between this and the week 2 is that i try to include new model terms
 #such as inverse barometer effect and using a model to transform pressure to wind speed
 
-def hurricane_physical_model(df,  model_spec=None, ATD=False):
+def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
     """
     Build and fit a hurricane damage model with configurable terms.
     
@@ -40,14 +41,17 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False):
         model_spec = {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True}
     
     path = r"./Speciale/Code/Week2/Plots"
-
     # Clean data
     df_clean = df[df['basedamage'] > 0].copy()
-    df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
+    df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'ND'])
     # Prepare variables
     basedamage = df_clean['basedamage'].values
+    
     if ATD:
         observed = np.log(df_clean['ATD'].values)
+    if inflation:
+        df_clean = df_clean[df_clean['ND'] > 0]
+        observed = np.log(df_clean['ND'].values)
     else:
         observed = np.log(basedamage)
 
@@ -62,8 +66,15 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False):
     timestamps = df_clean['lf_ISO_TIME'].values 
     years = pd.to_datetime(timestamps).year
     years = [int(year - int(years[0])) for year in years]
+    # Seasonal (day-of-year) features
+    doy = pd.to_datetime(timestamps).dayofyear.values.astype(float)
+    theta = 2 * np.pi * (doy / 365.25)
+    season_sin = np.sin(theta)
+    season_cos = np.cos(theta)
+
     travel_speed = df_clean['travel_speed_after_landfall_m_s'].values
     travel_speed_before = df_clean['travel_speed_before_landfall_m_s'].values
+    temp_anomaly = df_clean['Anomaly'].values
     modelled_wind_raw = equation_11_wind(pressure_raw, df_clean['lf_lat'].values, travel_speed)
     # Orthogonalize residuals: wind_speed ~ modelled_wind, use residual of this regression
     lr = LinearRegression().fit(modelled_wind_raw.reshape(-1, 1), wind_speed_raw)
@@ -75,6 +86,8 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False):
     model_name = "_".join(spec_parts)
     if ATD:
         filename = f"ATD_hurricane_model_{model_name}"
+    if inflation:
+        filename = f"inflation_hurricane_model_{model_name}"
     else:
         filename = f"hurricane_model_{model_name}"
     model_path = os.path.join(r"./Speciale/Code/Week4/Plots", filename)
@@ -122,11 +135,8 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False):
         
         if model_spec.get("economic", False):
             economic_coef = pm.Normal("economic_coef", sigma=3)
-            if ATD:
-                mu = mu + economic_coef*np.log(population*WPC/area)
-            else:
-                mu = mu + economic_coef*np.log(population*WPC/area)
-        
+            mu = mu + economic_coef*np.log(population*WPC/area)
+
         if model_spec.get("pressure", False):
             pressure_coef = pm.Normal("pressure_coef", sigma=3)
             mu = mu + pressure_coef*delta_P_relative
@@ -168,21 +178,26 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False):
             ib_coef = pm.Normal("ib_coef", sigma=3)
             mu = mu + ib_coef*ib_vals_relative  # Example term for inverse barometer effect
         if model_spec.get("economic_raw", False):
-            if ATD:
-                mu = mu + np.log((population*WPC/area))
-            else:
-                mu = mu + np.log(population*WPC/area)
+            mu = mu + np.log(population*WPC/area)
         if model_spec.get("water_level", False):
             water_level_coef = pm.Normal("water_level_coef", sigma=3)
             water_level = tides_m + ib_vals_raw
             mu = mu + water_level_coef*water_level
+        if model_spec.get("temp_anomaly", False):
+            temp_anomaly_coef = pm.Normal("temp_anomaly_coef", sigma=3)
+            mu = mu + temp_anomaly_coef*temp_anomaly
+        if model_spec.get("seasonal", False):
+            season_sin_coef = pm.Normal("season_sin_coef", sigma=3)
+            season_cos_coef = pm.Normal("season_cos_coef", sigma=3)
+            mu = mu + season_sin_coef * season_sin
+            mu = mu + season_sin_coef * season_cos 
+        if model_spec.get("pressure_trend_interaction", False):
+            pressure_trend_interaction_coef = pm.Normal("pressure_trend_interaction_coef", sigma=3)
+            mu = mu + pressure_trend_interaction_coef * delta_P_relative * np.array(years)
 
 
 
-        if ATD:
-            obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
-        else:
-            obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
+        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
         
         trace = pm.sample(draws=2500, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True})
         summary = az.summary(trace, hdi_prob=0.95)
@@ -220,6 +235,12 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False):
         var_names.append("water_level_coef")
     if model_spec.get("residual_wind", False):
         var_names.append("wind_coef_residual")
+    if model_spec.get("temp_anomaly", False):
+        var_names.append("temp_anomaly_coef")
+    if model_spec.get("seasonal", False):
+        var_names += ["season_sin_coef", "season_cos_coef"]
+    if model_spec.get("pressure_trend_interaction", False):
+        var_names.append("pressure_trend_interaction_coef")
 
     
 
@@ -259,7 +280,7 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False):
 
 
 
-def compare_models(df, model_specs, ATD=False):
+def compare_models(df, model_specs, ATD=False, inflation=False):
     """
     Compare multiple model specifications using WAIC and LOO.
     
@@ -285,7 +306,7 @@ def compare_models(df, model_specs, ATD=False):
     
     for i, spec in enumerate(model_specs, 1):
         print(f"\n[{i}/{len(model_specs)}] Fitting model with spec: {spec}")
-        trace, model_name = hurricane_physical_model(df, model_spec=spec, ATD=ATD)
+        trace, model_name = hurricane_physical_model(df, model_spec=spec, ATD=ATD, inflation=inflation)
         traces[model_name] = trace
 
     
@@ -323,6 +344,15 @@ if __name__ == "__main__":
     #Example usage
     #df = pd.read_excel('./Speciale/Hurricane_data/Aslak_data.xls', sheet_name='ATD of ICAT', engine='xlrd')
     df = pd.read_csv('./Speciale/Hurricane_data/Aslak_data_with_tide_and_travelspeed.csv')
+    df_temp_data = pd.read_csv('./Speciale/temp_data/data_global_ocean_temp.csv', skiprows=3)
+
+    df = merge_temp_data(df, df_temp_data, 'Year')
+    df_multiplier = pd.read_excel('./Speciale/Hurricane_data/Wienkle_data_.xlsx', sheet_name='Infaltion & Wealth')
+    df_multiplier['Year'] = df_multiplier['Year'].astype(int)
+    multiplier_columns = df_multiplier.columns
+    needed_columns = ['Year', 'Multiplier']
+    df_multiplier = df_multiplier[needed_columns]
+    df = pd.merge(df, df_multiplier, how='left', on='Year')
     df_clean = df.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
     df_clean = df_clean[df_clean['basedamage'] > 0]
     df_clean = df_clean[df_clean['ND'] > 0]
@@ -349,15 +379,19 @@ if __name__ == "__main__":
     # quit()
     # Define model specifications to compare
     model_specs = [
-        {"economic": True, "trend": True, "wind": True},
         # {"economic": True, "pressure": True, "trend": True, "inverse_barometer": True},
-        {"economic": True, "pressure": True, "trend": True},
-        {"economic": True, "pressure": True, "trend": True, "wind": True},
-        {"economic": True, "modelled_wind": True, "trend": True},
-        {"economic": True, "modelled_wind": True, "trend": True, "inverse_barometer": True},
-        {"economic": True,"pressure": True, "trend": True, "travel_speed": True},
-        {"economic": True,"pressure": True, "trend": True, "tides": True},
-        {"economic": True,"pressure": True, "trend": True, "inverse_barometer": True},
+        {"economic": True, "trend": True, "pressure": True},
+        {"economic": True, "trend": True, "pressure": True, "pressure_trend_interaction": True},
+
+
+
+
+        #{"economic": True, "seasonal": True, "trend": True, "pressure": True},
+        #{"economic": True, "seasonal": True, "trend": True, "pressure": True, "temp_anomaly": True},
+        # {"economic": True, "modelled_wind": True, "trend": True, "inverse_barometer": True},
+        # {"economic": True,"pressure": True, "trend": True, "travel_speed": True},
+        # {"economic": True,"pressure": True, "trend": True, "tides": True},
+        # {"economic": True,"pressure": True, "trend": True, "inverse_barometer": True},
 
         # {"economic": True, "pressure": True, "trend": True, "residual_wind": True},
         # {"economic": True, "pressure": True, "trend": True, "travel_speed": True},
@@ -418,7 +452,7 @@ if __name__ == "__main__":
     #   ]
     
     # Run comparison
-    comparison_df, traces = compare_models(df, model_specs, ATD=False)
+    comparison_df, traces = compare_models(df, model_specs, ATD=False, inflation=True)
     
     #hurricane_physical_model_APLR(df)
     #hurricane_physical_model(df, model_spec=model_specs[0])

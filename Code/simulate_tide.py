@@ -5,7 +5,8 @@ import netCDF4
 import numpy as np
 import pandas as pd
 
-nc_file = r"./Speciale/Pyfes_data/load_tide/2n2_fes2022.nc"
+
+nc_file = r"./Pyfes_data/load_tide/2n2_fes2022.nc"
 ds = netCDF4.Dataset(nc_file)
 lats = ds['lat'][:]
 lons = ds['lon'][:]
@@ -57,7 +58,7 @@ bbox = bounding_box(lat_station, lon_station, delta_lat=5, delta_lon=5)
 print("Bounding box aligned to FES grid:", bbox)
 
 
-path = r"./Speciale/Pyfes_data"
+path = r"./Pyfes_data"
 os.chdir(path)
 
 cfg = pyfes.load_config("fes2022.yaml", bbox=bbox)
