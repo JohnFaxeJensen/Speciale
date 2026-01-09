@@ -13,11 +13,12 @@ from wind_eq_comparison import equation_11_wind
 import sys
 sys.path.append(r"./Speciale/Code")
 from merge_temp import merge_temp_data,merge_temp_data_monthly
+from ULLN import ulln_logp, ulln_random
 
 #Difference between this and the week 2 is that i try to include new model terms
 #such as inverse barometer effect and using a model to transform pressure to wind speed
 
-def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
+def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, use_weinkle_atd=False, use_ulln=False):
     """
     Build and fit a hurricane damage model with configurable terms.
     
@@ -38,23 +39,29 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
     """
     
     if model_spec is None:
-        model_spec = {"economic": True, "pressure": True, "tides": True, "wind": True, "travel_speed": True}
+        raise ValueError("model_spec must be provided as a dictionary specifying model terms.")
     
     path = r"./Speciale/Code/Week2/Plots"
     # Clean data
     df_clean = df[df['basedamage'] > 0].copy()
     df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'ND'])
+    df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'ND', 'multiplier']) #testing
+
+    #try weinkle ATD if specified
+
     # Prepare variables
     basedamage = df_clean['basedamage'].values
     
     if ATD:
-        print("Using ATD as observed damage")
         observed = np.log(df_clean['ATD'].values)
     if inflation:
         df_clean = df_clean[df_clean['ND'] > 0]
         observed = np.log(df_clean['ND'].values)
-    if not ATD and not inflation:
-        print("Using Base Damage as observed damage")
+    if use_weinkle_atd:
+        df_clean = df_clean.dropna(subset=['ATD_weinkle'])
+        df_clean['ATD'] = df_clean['ATD_weinkle']
+        observed = np.log(df_clean['ATD'].values)
+    if not ATD and not inflation and not use_weinkle_atd:
         observed = np.log(basedamage)
 
 
@@ -96,6 +103,7 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
     temp_icoads_gc_anom = temp_icoads_gc - temp_icoads_gc[baseline_decade].mean()
     temp_icoads_mdr_anom = temp_icoads_mdr - temp_icoads_mdr[baseline_decade].mean()
 
+    multipliers = df_clean['multiplier'].values
 
 
     # Create model name based on spec
@@ -105,7 +113,9 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
         filename = f"ATD_hurricane_model_{model_name}"
     if inflation:
         filename = f"inflation_hurricane_model_{model_name}"
-    else:
+    if use_weinkle_atd:
+        filename = f"weinkle_ATD_hurricane_model_{model_name}"
+    if not ATD and not inflation and not use_weinkle_atd:
         filename = f"hurricane_model_{model_name}"
     model_path = os.path.join(r"./Speciale/Code/Week4/Plots", filename)
     os.makedirs(model_path, exist_ok=True)
@@ -144,16 +154,26 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
     ib_vals_relative = ib_vals_raw / category_1_ib_baseline
     
     with pm.Model() as model:
+
+
         # Priors for the linear combination
-        alpha = pm.Normal("alpha", mu=15, sigma=10)
+        alpha = pm.Normal("alpha", mu=0, sigma=4)
         sigma = pm.HalfNormal("sigma", sigma=5)
         
         # Build mu dynamically based on model_spec
         mu = alpha
         
         if model_spec.get("economic", False):
-            economic_coef = pm.Normal("economic_coef", sigma=3)
+            economic_coef = pm.Normal("economic_coef", sigma=1)
             mu = mu + economic_coef*np.log(population*WPC/area)
+
+        if model_spec.get("economic_exp", False):
+            economic_coef_exp = pm.Normal("economic_coef_exp", sigma=3)
+            mu = mu + economic_coef_exp*(population*WPC/area)
+        if model_spec.get("economic_atd", False):
+            economic_coef_atd = pm.Normal("economic_coef_atd", sigma=1)
+            mu = mu + economic_coef_atd*np.log(population*WPC* multipliers)
+        
 
         if model_spec.get("economic_split", False):
             economic_coef_pop = pm.Normal("economic_coef_pop", sigma=3)
@@ -179,13 +199,17 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
         if model_spec.get("residual_wind", False):
             wind_coef_residual = pm.Normal("wind_coef_residual", sigma=3)
             mu = mu + wind_coef_residual*residual_wind_relative
+        if model_spec.get("wind_power_law", False):
+            wind_power_law_coef = pm.Normal("wind_power_law_coef", mu=4, sigma=2)
+            wind_power_law = np.log(wind_speed_relative)*(wind_power_law_coef)
+            mu = mu + wind_power_law
         
         if model_spec.get("travel_speed", False):
             travel_speed_coef = pm.Normal("travel_speed_coef", sigma=3)
             mu = mu + travel_speed_coef*travel_speed
 
         if model_spec.get("trend", False):
-            trend_coef = pm.Normal("trend_coef", sigma=3)
+            trend_coef = pm.Normal("trend_coef", sigma=0.5)
             mu = mu + trend_coef*np.array(years)
         if model_spec.get("pca", False):
             pc1_coef = pm.Normal("pc1_coef", sigma=3)
@@ -197,6 +221,7 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
             mu = mu + ib_coef*ib_vals_relative  # Example term for inverse barometer effect
         if model_spec.get("economic_raw", False):
             mu = mu + np.log(population*WPC/area)
+
         if model_spec.get("water_level", False):
             water_level_coef = pm.Normal("water_level_coef", sigma=3)
             water_level = tides_m + ib_vals_raw
@@ -229,10 +254,19 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
             sea_level_rise = slope_sea_level * np.array(years)
             sea_level_coef = pm.Normal("sea_level_coef", sigma=3)
             mu = mu + sea_level_coef * sea_level_rise
+        
 
 
-
-        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
+        if use_ulln:
+            upper_min = np.max(np.exp(observed)) 
+            upper_min_prior = pm.Pareto("upper", alpha=2.0, m=upper_min)
+            obs = pm.CustomDist("obs",
+                                 mu, sigma, upper_min_prior,
+                                 logp=ulln_logp,
+                                 random=ulln_random,
+                                 observed=np.exp(observed))
+        else:  
+            obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
         
         trace = pm.sample(draws=2500, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True})
         summary = az.summary(trace, hdi_prob=0.95)
@@ -252,6 +286,8 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
         var_names.append("tides_coef")
     if model_spec.get("wind", False):
         var_names.append("wind_coef")
+    if model_spec.get("wind_power_law", False):
+        var_names.append("wind_power_law_coef")
     if model_spec.get("modelled_wind", False):
         var_names.append("modelled_wind_coef")
         var_names.append("wind_coef_residual")
@@ -286,6 +322,11 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
         var_names += ["economic_coef_pop", "economic_coef_wpc"]
     if model_spec.get("sea_level_rise", False):
         var_names.append("sea_level_coef")
+    if model_spec.get("economic_atd", False):
+        var_names.append("economic_coef_atd")
+
+
+
     
 
     
@@ -312,7 +353,10 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
     bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(observed))), 25))
     plt.figure(figsize=(10,6))
     plt.hist(observed, bins=bins, density=True, alpha=0.5, label="Observed")
-    plt.hist(ppc_values, bins=bins, density=True, alpha=0.5, label="Posterior predictive")
+    if use_ulln:
+        plt.hist(np.log(ppc_values), bins=bins, density=True, alpha=0.5, label="Posterior predictive")
+    else:
+        plt.hist(ppc_values, bins=bins, density=True, alpha=0.5, label="Posterior predictive")
     plt.xlabel("ln(Base Damage)")
     plt.ylabel("Density")
     plt.title(f"Posterior Predictive Histogram ({model_name})")
@@ -326,7 +370,7 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False):
 
 
 
-def compare_models(df, model_specs, ATD=False, inflation=False):
+def compare_models(df, model_specs, ATD=False, inflation=False, use_weinkle_atd=False, use_ulln=False):
     """
     Compare multiple model specifications using WAIC and LOO.
     
@@ -352,7 +396,7 @@ def compare_models(df, model_specs, ATD=False, inflation=False):
     
     for i, spec in enumerate(model_specs, 1):
         print(f"\n[{i}/{len(model_specs)}] Fitting model with spec: {spec}")
-        trace, model_name = hurricane_physical_model(df, model_spec=spec, ATD=ATD, inflation=inflation)
+        trace, model_name = hurricane_physical_model(df, model_spec=spec, ATD=ATD, inflation=inflation , use_weinkle_atd=use_weinkle_atd, use_ulln=True)
         traces[model_name] = trace
 
     
@@ -385,7 +429,7 @@ def compare_models(df, model_specs, ATD=False, inflation=False):
     return comparison_df, traces
 
 
-def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=False):
+def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=False, use_weinkle_atd=False, use_ulln=False):
     """
     Fit same model to before/after periods and compare sigma, coefficients, fit quality.
     """
@@ -401,7 +445,7 @@ def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=Fa
     
     for period_name, df_period in [("before", df_before), ("after", df_after)]:
         print(f"\n--- Fitting model for {period_name} {cutoff_year} ---")
-        trace, model_name = hurricane_physical_model(df_period, model_spec=model_spec, ATD=ATD, inflation=inflation)
+        trace, model_name = hurricane_physical_model(df_period, model_spec=model_spec, ATD=ATD, inflation=inflation, use_weinkle_atd=use_weinkle_atd, use_ulln=use_ulln)
         traces[period_name] = trace
     
     # Compare sigma
@@ -429,6 +473,10 @@ def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=Fa
     
     return traces
 
+    
+
+
+
 if __name__ == "__main__":
     #Example usage
 
@@ -442,12 +490,14 @@ if __name__ == "__main__":
     #then merge regional icoads temp data
     df_temp_data = pd.read_csv('./Speciale/temp_data/mean_sst_regions_Icoads.csv')
     df = merge_temp_data_monthly(df, df_temp_data, ['Year', 'Month'])
-    df_multiplier = pd.read_excel('./Speciale/Hurricane_data/Wienkle_data_.xlsx', sheet_name='Infaltion & Wealth')
-    df_multiplier['Year'] = df_multiplier['Year'].astype(int)
-    multiplier_columns = df_multiplier.columns
-    needed_columns = ['Year', 'Multiplier']
-    df_multiplier = df_multiplier[needed_columns]
-    df = pd.merge(df, df_multiplier, how='left', on='Year')
+    #try the weinkle basedamage data. reformat to merge with main df
+    df_weinkle_data = pd.read_excel('./Speciale/Hurricane_data/Aslak_data.xls', sheet_name='ATD of Weinkle')
+    atd_weinkle = df_weinkle_data[['ATCF_ID', 'ATD', 'basedamage', 'ND']]
+    atd_weinkle['multiplier'] = atd_weinkle['ND'] / atd_weinkle['basedamage']
+    rename_dict = {'ATD': 'ATD_weinkle', 'basedamage': 'basedamage_weinkle', 'ND': 'ND_weinkle'}
+    atd_weinkle.rename(rename_dict, axis=1, inplace=True)
+
+    df = pd.merge(df, atd_weinkle, how='left', left_on='ATCF_ID', right_on='ATCF_ID')
     df_clean = df.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
     df_clean = df_clean[df_clean['basedamage'] > 0]
     df_clean = df_clean[df_clean['ND'] > 0]
@@ -474,35 +524,35 @@ if __name__ == "__main__":
     # quit()
     # Define model specifications to compare
     model_specs = [
-        # {"economic": True, "pressure": True, "trend": True, "inverse_barometer": True},
-        {"economic": True, "trend": True, "pressure": True},
-        {"economic": True, "trend": True, "wind": True},
-        { "trend": True, "pressure": True},
+        {"pressure": True, "trend": True, "wind": True},
+        {"trend": True, "pressure": True},
 
+        # {"economic_atd": True, "trend": True, "modelled_wind": True, "travel_speed": True, "gc_icoads": True},
+        # {"economic_atd": True, "trend": True, "modelled_wind": True, "travel_speed": True,  "mdr_icoads": True},
+        # {"economic_atd": True, "trend": True, "modelled_wind": True, "seasonal":True},
+        # {"economic_atd": True, "modelled_wind": True, "trend": True},
 
 
     ]
 
-    # model_specs = [
-    # {"wind": True, "trend": True, "economic": True},              # Wind only
+    # model_specs = [            # Wind only
     # {"pressure": True, "trend": True, "economic": True},          # Pressure only
     # ]
 
     # # # Then run period comparison on EACH
     # for spec in model_specs:
-    #     traces = compare_model_by_period(df, spec, cutoff_year=1960, ATD=True, inflation=False)
+    #     traces = compare_model_by_period(df, spec, cutoff_year=1980, ATD=False, inflation=False, use_weinkle_atd=True)
     # Run comparison
-    comparison_df, traces = compare_models(df, model_specs, ATD=True, inflation=False)
-    
-    #check correlation between wind and pressure pre and post 1960
-    df_pre1960 = df_clean[df_clean['Year'] < 1960]
-    df_post1960 = df_clean[df_clean['Year'] >= 1960]
-    corr_pre = df_pre1960[['lf_wind', 'lf_pressure']].corr().iloc[0,1]
-    corr_post = df_post1960[['lf_wind', 'lf_pressure']].corr().iloc[0,1]
-    print(f"Correlation (Wind vs Pressure) pre-1960: {corr_pre:.3f}")
-    print(f"Correlation (Wind vs Pressure) post-1960: {corr_post:.3f}")
-    #check correlation between wind and pressure pre and post 1960 by wind equation how well it models wind from pressure
-    modelled_wind_pre = equation_11_wind(df_pre1960['lf_pressure'].values, df_pre1960['lf_lat'].values, df_pre1960['travel_speed_after_landfall_m_s'].values)
-    modelled_wind_post = equation_11_wind(df_post1960['lf_pressure'].values, df_post1960['lf_lat'].values, df_post1960['travel_speed_after_landfall_m_s'].values)
-    print(f"R^2 (Modelled Wind vs Observed Wind) pre-1960: {np.corrcoef(modelled_wind_pre, df_pre1960['lf_wind'].values)[0,1]**2:.3f}")
-    print(f"R^2 (Modelled Wind vs Observed Wind) post-1960: {np.corrcoef(modelled_wind_post, df_post1960['lf_wind'].values)[0,1]**2:.3f}")
+    comparison_df, traces = compare_models(df, model_specs, ATD=False, inflation=False, use_weinkle_atd=True, use_ulln=True)
+        # Compare both methods
+
+    # df_post1960 = df_clean[df_clean['Year'] >= 1960]
+    # corr_pre = df_pre1960[['lf_wind', 'lf_pressure']].corr().iloc[0,1]
+    # corr_post = df_post1960[['lf_wind', 'lf_pressure']].corr().iloc[0,1]
+    # print(f"Correlation (Wind vs Pressure) pre-1960: {corr_pre:.3f}")
+    # print(f"Correlation (Wind vs Pressure) post-1960: {corr_post:.3f}")
+    # #check correlation between wind and pressure pre and post 1960 by wind equation how well it models wind from pressure
+    # modelled_wind_pre = equation_11_wind(df_pre1960['lf_pressure'].values, df_pre1960['lf_lat'].values, df_pre1960['travel_speed_after_landfall_m_s'].values)
+    # modelled_wind_post = equation_11_wind(df_post1960['lf_pressure'].values, df_post1960['lf_lat'].values, df_post1960['travel_speed_after_landfall_m_s'].values)
+    # print(f"R^2 (Modelled Wind vs Observed Wind) pre-1960: {np.corrcoef(modelled_wind_pre, df_pre1960['lf_wind'].values)[0,1]**2:.3f}")
+    # print(f"R^2 (Modelled Wind vs Observed Wind) post-1960: {np.corrcoef(modelled_wind_post, df_post1960['lf_wind'].values)[0,1]**2:.3f}")
