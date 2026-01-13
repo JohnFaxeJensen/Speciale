@@ -145,7 +145,7 @@ def create_teleconnection_map_icoads(damage_df, icoads_path, output_dir=r"./Spec
         significant_corr.latitude,
         significant_corr,
         levels=levels,
-        #hatches=['///', None, '\\\\\\'],
+        hatches=['///', None, '\\\\\\'],
         alpha=0.3,
         transform=ccrs.PlateCarree()
     )
