@@ -45,7 +45,7 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
     # Clean data
     df_clean = df[df['basedamage'] > 0].copy()
     df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'ND'])
-    df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'ND', 'multiplier']) #testing
+    #df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'ND', 'multiplier']) #testing
 
     #try weinkle ATD if specified
 
@@ -153,6 +153,8 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
     category_1_ib_baseline = (1013.25 - category_1_pressure_baseline) * 100 / (density_water * g)
     ib_vals_relative = ib_vals_raw / category_1_ib_baseline
     
+    ibtracks_speed = df_clean['ibtracs_speed_at_landfall_m_s'].values
+
     with pm.Model() as model:
 
 
@@ -200,7 +202,7 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
             wind_coef_residual = pm.Normal("wind_coef_residual", sigma=3)
             mu = mu + wind_coef_residual*residual_wind_relative
         if model_spec.get("wind_power_law", False):
-            wind_power_law_coef = pm.Normal("wind_power_law_coef", mu=4, sigma=2)
+            wind_power_law_coef = pm.Normal("wind_power_law_coef", mu=9, sigma=4)
             wind_power_law = np.log(wind_speed_relative)*(wind_power_law_coef)
             mu = mu + wind_power_law
         
@@ -254,6 +256,17 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
             sea_level_rise = slope_sea_level * np.array(years)
             sea_level_coef = pm.Normal("sea_level_coef", sigma=3)
             mu = mu + sea_level_coef * sea_level_rise
+        if model_spec.get("ibtracks_speed", False):
+            ibtracks_speed_coef = pm.Normal("ibtracks_speed_coef", sigma=3)
+            mu = mu + ibtracks_speed_coef * (ibtracks_speed / 10)  # normalize to 10 m/s
+        
+        if model_spec.get("wind_vulnerability", False):
+            v_threshold = pm.Normal("v_threshold", mu=50, sigma=10)
+            v_half = pm.Normal("v_half", mu=120, sigma=15)
+            v_coef = pm.Normal("v_coef", sigma=3)
+            v_n = pm.math.maximum(wind_speed_raw-v_threshold,0)/(v_half-v_threshold)
+            vulnerability = v_n**3/(1+v_n**3)
+            mu = mu + v_coef*np.log(area*vulnerability + 1e-6)  # add small constant to avoid log(0)
         
 
 
@@ -324,6 +337,10 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
         var_names.append("sea_level_coef")
     if model_spec.get("economic_atd", False):
         var_names.append("economic_coef_atd")
+    if model_spec.get("ibtracks_speed", False):
+        var_names.append("ibtracks_speed_coef")
+    if model_spec.get("wind_vulnerability", False):
+        var_names += ["v_threshold", "v_half", "v_coef"]
 
 
 
@@ -396,7 +413,7 @@ def compare_models(df, model_specs, ATD=False, inflation=False, use_weinkle_atd=
     
     for i, spec in enumerate(model_specs, 1):
         print(f"\n[{i}/{len(model_specs)}] Fitting model with spec: {spec}")
-        trace, model_name = hurricane_physical_model(df, model_spec=spec, ATD=ATD, inflation=inflation , use_weinkle_atd=use_weinkle_atd, use_ulln=True)
+        trace, model_name = hurricane_physical_model(df, model_spec=spec, ATD=ATD, inflation=inflation , use_weinkle_atd=use_weinkle_atd, use_ulln=use_ulln)
         traces[model_name] = trace
 
     
@@ -447,29 +464,7 @@ def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=Fa
         print(f"\n--- Fitting model for {period_name} {cutoff_year} ---")
         trace, model_name = hurricane_physical_model(df_period, model_spec=model_spec, ATD=ATD, inflation=inflation, use_weinkle_atd=use_weinkle_atd, use_ulln=use_ulln)
         traces[period_name] = trace
-    
-    # Compare sigma
-    print(f"\n{'='*80}")
-    print("COMPARISON OF SIGMA (RESIDUAL UNCERTAINTY)")
-    print(f"{'='*80}")
-    sigma_stats = {}
-    for period in ["before", "after"]:
-        sigma_post = traces[period].posterior['sigma'].values.flatten()
-        sigma_stats[period] = {"mean": sigma_post.mean(), "std": sigma_post.std()}
-        print(f"{period.upper()}: mean={sigma_post.mean():.3f}, std={sigma_post.std():.3f}")
-    
-    # Visualize sigma comparison
-    fig, ax = plt.subplots(figsize=(8, 5))
-    periods = list(sigma_stats.keys())
-    means = [sigma_stats[p]["mean"] for p in periods]
-    stds = [sigma_stats[p]["std"] for p in periods]
-    ax.bar(periods, means, yerr=stds, capsize=5, color=['red', 'blue'], alpha=0.6)
-    ax.set_ylabel("Sigma (Residual SD)")
-    ax.set_title(f"Data Quality by Period (Cutoff: {cutoff_year})")
-    ax.grid(True, alpha=0.3, axis='y')
-    plt.tight_layout()
-    plt.savefig(r"./Speciale/Code/Week4/Plots/sigma_comparison_by_period.png")
-    plt.show()
+
     
     return traces
 
@@ -504,6 +499,9 @@ if __name__ == "__main__":
     BD = np.array(df_clean['basedamage'].values)
     ND = np.array(df_clean['ND'].values)
     
+    
+
+    
     #Here is the wind models comparisons using models from the paper:
     #https://journals.ametsoc.org/view/journals/mwre/136/9/2008mwr2395.1.pdf
     # Your data
@@ -524,10 +522,10 @@ if __name__ == "__main__":
     # quit()
     # Define model specifications to compare
     model_specs = [
-        {"pressure": True, "trend": True, "wind": True},
-        {"trend": True, "pressure": True},
-
-        # {"economic_atd": True, "trend": True, "modelled_wind": True, "travel_speed": True, "gc_icoads": True},
+        {"economic": True,  "pressure": True},
+        {"economic": True, "pressure": True, "wind_power_law": True},
+        {"economic": True,  "wind_power_law": True},
+        #{"economic": True, "modelled_wind": True},
         # {"economic_atd": True, "trend": True, "modelled_wind": True, "travel_speed": True,  "mdr_icoads": True},
         # {"economic_atd": True, "trend": True, "modelled_wind": True, "seasonal":True},
         # {"economic_atd": True, "modelled_wind": True, "trend": True},
@@ -539,13 +537,28 @@ if __name__ == "__main__":
     # {"pressure": True, "trend": True, "economic": True},          # Pressure only
     # ]
 
+
     # # # Then run period comparison on EACH
     # for spec in model_specs:
-    #     traces = compare_model_by_period(df, spec, cutoff_year=1980, ATD=False, inflation=False, use_weinkle_atd=True)
+    #     traces = compare_model_by_period(df, spec, cutoff_year=1950, ATD=False, inflation=False, use_weinkle_atd=False, use_ulln=False)
     # Run comparison
-    comparison_df, traces = compare_models(df, model_specs, ATD=False, inflation=False, use_weinkle_atd=True, use_ulln=True)
+    df_clean = df_clean[df_clean['Year'] >= 2003]
+    df_clean = df_clean.dropna(subset=['rmw_at_landfall_m'])
+
+    # Convert to float first, then drop empty strings
+    df_clean['rmw_at_landfall_m'] = pd.to_numeric(df_clean['rmw_at_landfall_m'], errors='coerce')
+    df_clean = df_clean.dropna(subset=['rmw_at_landfall_m'])
+
+    # Now plot
+    plt.scatter( df_clean['rmw_at_landfall_m'], np.log(df_clean['basedamage']))
+    plt.show()
+    quit()
+    comparison_df, traces = compare_models(df, model_specs, ATD=False, inflation=True, use_weinkle_atd=False, use_ulln=False)
         # Compare both methods
 
+
+# Now merge with your main dataframe:
+# df = pd.merge(df, df_surge, left_on='ATCF_ID', right_on='stname', how='left')
     # df_post1960 = df_clean[df_clean['Year'] >= 1960]
     # corr_pre = df_pre1960[['lf_wind', 'lf_pressure']].corr().iloc[0,1]
     # corr_post = df_post1960[['lf_wind', 'lf_pressure']].corr().iloc[0,1]
