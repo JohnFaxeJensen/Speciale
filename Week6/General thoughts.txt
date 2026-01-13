@@ -1,0 +1,11 @@
+Do even have a good estimate on priors? 
+What is best to use? ATD, basedamage ND is it redundant to include the economic term on the right hand site, if the left hand site is depended on it? If we want to comment on other trends that are not inflation+pop trends. 
+
+Im confused about what is important regarding the economic term because it is quite coupled with the trend term? 
+
+What about the article about the icat data being corrupted?
+
+Im generally just confused about what is good modelling and what approach we should pick
+
+
+If i dont have the trend term i will directly get in the economic term scales with basedamage. if basedamage propto exposure^1 then they scale linear and vulnerability doesnt change with time in the data however if it changes it is different from 1.

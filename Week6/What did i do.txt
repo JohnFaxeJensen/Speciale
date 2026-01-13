@@ -1,3 +1,4 @@
-Monday: Loading in the actual observational sst data. Gotten from https://psl.noaa.gov/data/gridded/data.coads.1deg.html
+Monday: Loading in the actual observational sst data. Gotten from https://psl.noaa.gov/data/gridded/data.coads.1deg.html. This data did not improve predictive power of the model. I checked if pressure and wind was correlated differently post and pre 1960 to see if measurements had improved. they had not. this indicates that the measurements i kind of trustworthy however we cannot exclude systematic biases in both measurements. We cant just infer on the different period because there may be some trend in the basedamage data that is not captured entirely by the physical parameters Used t
 
+Tuesday: trying to figure out if I should use ATD or basedamage or what gives the best predictive parameters 
 

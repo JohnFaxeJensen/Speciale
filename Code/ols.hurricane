@@ -1,0 +1,278 @@
+
+import statsmodels.api as sm
+from sklearn.utils import resample
+
+def hurricane_physical_model_ols(df, model_spec=None, ATD=False, inflation=False, use_weinkle_atd=False, n_bootstrap=1000):
+    """
+    Build and fit a hurricane damage model using OLS with bootstrap confidence intervals.
+    
+    Parameters:
+    -----------
+    df : DataFrame
+        Input data
+    model_spec : dict
+        Specify which terms to include
+    n_bootstrap : int
+        Number of bootstrap samples for confidence intervals
+    
+    Returns:
+    --------
+    results : dict
+        Dictionary containing OLS results, bootstrap samples, and summary statistics
+    model_name : str
+        Descriptive name of the model specification
+    """
+    
+    if model_spec is None:
+        raise ValueError("model_spec must be provided as a dictionary specifying model terms.")
+    
+    # Clean data (same as Bayesian version)
+    df_clean = df[df['basedamage'] > 0].copy()
+    df_clean = df_clean.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'ND', 'multiplier'])
+
+    # Prepare variables (same as Bayesian)
+    basedamage = df_clean['basedamage'].values
+    
+    if ATD:
+        observed = np.log(df_clean['ATD'].values)
+    elif inflation:
+        df_clean = df_clean[df_clean['ND'] > 0]
+        observed = np.log(df_clean['ND'].values)
+    elif use_weinkle_atd:
+        df_clean = df_clean.dropna(subset=['ATD_weinkle'])
+        df_clean['ATD'] = df_clean['ATD_weinkle']
+        observed = np.log(df_clean['ATD'].values)
+    else:
+        observed = np.log(basedamage)
+
+    population = df_clean['population'].values
+    WPC = df_clean['WPC'].values
+    wind_speed_raw = df_clean['lf_wind'].values
+    pressure_raw = df_clean['lf_pressure'].values
+    area = 10000
+    tides = df_clean['Tide_Level'].values
+    tides_m = tides / 100
+    timestamps = df_clean['lf_ISO_TIME'].values 
+    years = pd.to_datetime(timestamps).year
+    years = np.array([int(year - int(years[0])) for year in years])
+    
+    doy = pd.to_datetime(timestamps).dayofyear.values.astype(float)
+    theta = 2 * np.pi * (doy / 365.25)
+    season_sin = np.sin(theta)
+    season_cos = np.cos(theta)
+
+    travel_speed = df_clean['travel_speed_after_landfall_m_s'].values
+    travel_speed_before = df_clean['travel_speed_before_landfall_m_s'].values
+
+    temp_anomaly_global = df_clean['Anomaly_global'].values
+    temp_anomaly_global = temp_anomaly_global - (np.array(years) - years[0]) * 0.008
+
+    modelled_wind_raw = equation_11_wind(pressure_raw, df_clean['lf_lat'].values, travel_speed)
+    lr = LinearRegression().fit(modelled_wind_raw.reshape(-1, 1), wind_speed_raw)
+    wind_pred_raw = lr.predict(modelled_wind_raw.reshape(-1, 1))
+    residual_wind_raw = wind_speed_raw - wind_pred_raw
+    
+    temp_hadisst_gc = df_clean['mean_temp_hadisst_gc'].values
+    temp_hadisst_mdr = df_clean['mean_temp_hadisst_mdr'].values
+    temp_icoads_gc = df_clean['mean_temp_icoads_gc'].values
+    temp_icoads_mdr = df_clean['mean_temp_icoads_mdr'].values
+    baseline_decade = (years >= 70) & (years < 80)
+    temp_hadisst_gc_anom = temp_hadisst_gc - temp_hadisst_gc[baseline_decade].mean()
+    temp_hadisst_mdr_anom = temp_hadisst_mdr - temp_hadisst_mdr[baseline_decade].mean()
+    temp_icoads_gc_anom = temp_icoads_gc - temp_icoads_gc[baseline_decade].mean()
+    temp_icoads_mdr_anom = temp_icoads_mdr - temp_icoads_mdr[baseline_decade].mean()
+
+    multipliers = df_clean['multiplier'].values
+
+    # Create model name
+    spec_parts = [k for k, v in model_spec.items() if v]
+    model_name = "_".join(spec_parts)
+    if ATD:
+        filename = f"ATD_hurricane_model_ols_{model_name}"
+    elif inflation:
+        filename = f"inflation_hurricane_model_ols_{model_name}"
+    elif use_weinkle_atd:
+        filename = f"weinkle_ATD_hurricane_model_ols_{model_name}"
+    else:
+        filename = f"hurricane_model_ols_{model_name}"
+    
+    model_path = os.path.join(r"./Speciale/Code/Week4/Plots", filename)
+    os.makedirs(model_path, exist_ok=True)
+
+    category_1_wind_baseline = 95 * 0.868976242
+    category_1_pressure_baseline = 980
+    wind_speed_relative = wind_speed_raw / category_1_wind_baseline
+    pressure_relative = pressure_raw / category_1_pressure_baseline
+    travel_speed = travel_speed / 10
+    travel_speed_before = travel_speed_before / 10
+    modelled_wind_relative = modelled_wind_raw / category_1_wind_baseline
+    residual_wind_relative = residual_wind_raw / category_1_wind_baseline
+
+    scaler = StandardScaler()
+    pressure_wind_scaled = scaler.fit_transform(np.column_stack([pressure_relative, wind_speed_relative]))
+    pca = PCA(n_components=2)
+    pca_components = pca.fit_transform(pressure_wind_scaled)
+    pc1, pc2 = pca_components[:, 0], pca_components[:, 1]
+    
+    delta_P = (1013.25 - pressure_raw) * 100
+    delta_P_baseline = (1013.25 - category_1_pressure_baseline) * 100
+    delta_P_relative = delta_P / delta_P_baseline
+    density_water = 1000
+    g = 9.81
+    ib_vals_raw = delta_P / (density_water * g)
+    category_1_ib_baseline = (1013.25 - category_1_pressure_baseline) * 100 / (density_water * g)
+    ib_vals_relative = ib_vals_raw / category_1_ib_baseline
+
+    # Build feature matrix dynamically based on model_spec
+    features = {}
+    feature_names = []
+    
+    if model_spec.get("economic", False):
+        features["economic"] = np.log(population * WPC / area)
+        feature_names.append("economic")
+    
+    if model_spec.get("economic_atd", False):
+        features["economic_atd"] = np.log(population * WPC * multipliers)
+        feature_names.append("economic_atd")
+    
+    if model_spec.get("pressure", False):
+        features["pressure"] = delta_P_relative
+        feature_names.append("pressure")
+    
+    if model_spec.get("tides", False):
+        features["tides"] = tides_m
+        feature_names.append("tides")
+    
+    if model_spec.get("wind", False):
+        features["wind"] = wind_speed_relative
+        feature_names.append("wind")
+    
+    if model_spec.get("modelled_wind", False):
+        features["modelled_wind"] = modelled_wind_relative
+        features["residual_wind"] = residual_wind_relative
+        feature_names.extend(["modelled_wind", "residual_wind"])
+    
+    if model_spec.get("residual_wind", False):
+        features["residual_wind"] = residual_wind_relative
+        feature_names.append("residual_wind")
+    
+    if model_spec.get("wind_power_law", False):
+        features["wind_power_law"] = np.log(wind_speed_relative)
+        feature_names.append("wind_power_law")
+    
+    if model_spec.get("travel_speed", False):
+        features["travel_speed"] = travel_speed
+        feature_names.append("travel_speed")
+    
+    if model_spec.get("trend", False):
+        features["trend"] = years
+        feature_names.append("trend")
+    
+    if model_spec.get("pca", False):
+        features["pc1"] = pc1
+        features["pc2"] = pc2
+        feature_names.extend(["pc1", "pc2"])
+    
+    if model_spec.get("inverse_barometer", False):
+        features["inverse_barometer"] = ib_vals_relative
+        feature_names.append("inverse_barometer")
+    
+    if model_spec.get("water_level", False):
+        water_level = tides_m + ib_vals_raw
+        features["water_level"] = water_level
+        feature_names.append("water_level")
+    
+    if model_spec.get("temp_anomaly_global", False):
+        features["temp_anomaly_global"] = temp_anomaly_global
+        feature_names.append("temp_anomaly_global")
+    
+    if model_spec.get("seasonal", False):
+        features["season_sin"] = season_sin
+        features["season_cos"] = season_cos
+        feature_names.extend(["season_sin", "season_cos"])
+    
+    if model_spec.get("pressure_trend_interaction", False):
+        features["pressure_trend_interaction"] = delta_P_relative * years
+        feature_names.append("pressure_trend_interaction")
+    
+    if model_spec.get("gc_hadisst", False):
+        features["gc_hadisst"] = temp_hadisst_gc
+        feature_names.append("gc_hadisst")
+    
+    if model_spec.get("mdr_hadisst", False):
+        features["mdr_hadisst"] = temp_hadisst_mdr
+        feature_names.append("mdr_hadisst")
+    
+    if model_spec.get("gc_icoads", False):
+        features["gc_icoads"] = temp_icoads_gc
+        feature_names.append("gc_icoads")
+    
+    if model_spec.get("mdr_icoads", False):
+        features["mdr_icoads"] = temp_icoads_mdr
+        feature_names.append("mdr_icoads")
+    
+    if model_spec.get("sea_level_rise", False):
+        slope_sea_level = 0.0025
+        sea_level_rise = slope_sea_level * years
+        features["sea_level_rise"] = sea_level_rise
+        feature_names.append("sea_level_rise")
+
+    # Build design matrix
+    X = np.column_stack([features[name] for name in feature_names])
+    X = sm.add_constant(X)  # Add intercept
+    
+    # Fit OLS model
+    ols_model = sm.OLS(observed, X).fit()
+    
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"OLS Model: {model_name}")
+    print(f"{'='*60}")
+    print(ols_model.summary())
+    
+
+    
+    
+
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(model_path, f"{filename}_bootstrap_distributions.png"), dpi=100)
+    plt.close()
+    
+    # Residual plots
+    residuals = ols_model.resid
+    fitted = ols_model.fittedvalues
+    
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # Residuals vs Fitted
+    axes[0, 0].scatter(fitted, residuals, alpha=0.6)
+    axes[0, 0].axhline(y=0, color='r', linestyle='--')
+    axes[0, 0].set_xlabel('Fitted values')
+    axes[0, 0].set_ylabel('Residuals')
+    axes[0, 0].set_title('Residuals vs Fitted')
+    axes[0, 0].grid(True, alpha=0.3)
+    
+    # Q-Q plot
+    sm.qqplot(residuals, line='45', ax=axes[0, 1])
+    axes[0, 1].set_title('Normal Q-Q Plot')
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    # Histogram of residuals
+    axes[1, 0].hist(residuals, bins=20, edgecolor='black', alpha=0.7)
+    axes[1, 0].set_xlabel('Residuals')
+    axes[1, 0].set_ylabel('Frequency')
+    axes[1, 0].set_title('Distribution of Residuals')
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Scale-Location plot
+    standardized_resid = residuals / np.std(residuals)
+    axes[1, 1].scatter(fitted, np.sqrt(np.abs(standardized_resid)), alpha=0.6)
+    axes[1, 1].set_xlabel('Fitted values')
+    axes[1, 1].set_ylabel(r'$\sqrt{|standardized\ residuals|}$')
+    axes[1, 1].set_title('Scale-Location Plot')
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(model_path, f"{filename}_diagnostics.png"), dpi=100)
+    plt.close()

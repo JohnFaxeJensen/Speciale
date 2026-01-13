@@ -1,0 +1,4 @@
+Monday: look at ibtracks again storm speed, also looked at maybe incorporating risk factor from here:
+https://www.fema.gov/flood-maps/products-tools/national-risk-index
+
+Also looked at using ML to predict R_max and then use that as a predictor as well.
