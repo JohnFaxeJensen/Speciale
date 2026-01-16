@@ -12,7 +12,7 @@ from wind_eq_comparison import equation_11_wind
 
 import sys
 sys.path.append(r"./Speciale/Code")
-from merge_temp import merge_temp_data,merge_temp_data_monthly
+from Speciale.Code.merge_temp import merge_temp_data,merge_temp_data_monthly
 from ULLN import ulln_logp, ulln_random
 
 #Difference between this and the week 2 is that i try to include new model terms
@@ -153,8 +153,10 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
     category_1_ib_baseline = (1013.25 - category_1_pressure_baseline) * 100 / (density_water * g)
     ib_vals_relative = ib_vals_raw / category_1_ib_baseline
     
-    ibtracks_speed = df_clean['ibtracs_speed_at_landfall_m_s'].values
-
+    ibtracks_speed = df_clean['STORM_SPEED'].values
+    r50_mean = df_clean['r50_mean_at_landfall'].values
+    print(r50_mean)
+    quit()
     with pm.Model() as model:
 
 
@@ -268,6 +270,10 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
             vulnerability = v_n**3/(1+v_n**3)
             mu = mu + v_coef*np.log(area*vulnerability + 1e-6)  # add small constant to avoid log(0)
         
+        if model_spec.get("r50", False):
+            r50_coef = pm.Normal("r50_coef", sigma=3)
+            mu = mu + r50_coef*r50_mean
+
 
 
         if use_ulln:
@@ -341,6 +347,8 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
         var_names.append("ibtracks_speed_coef")
     if model_spec.get("wind_vulnerability", False):
         var_names += ["v_threshold", "v_half", "v_coef"]
+    if model_spec.get("r50", False):
+        var_names.append("r50_coef")
 
 
 
@@ -364,7 +372,6 @@ def hurricane_physical_model(df,  model_spec=None, ATD=False, inflation=False, u
         ppc = pm.sample_posterior_predictive(trace)
     
     ppc_values = ppc.posterior_predictive['obs'].values.flatten()
-    
     # Histogram comparison
     combined = np.concatenate([observed, ppc_values])
     bins = np.linspace(combined.min(), combined.max(), max(int(np.sqrt(len(observed))), 25))
@@ -475,10 +482,11 @@ def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=Fa
 if __name__ == "__main__":
     #Example usage
 
-    df = pd.read_csv('./Speciale/Hurricane_data/Aslak_data_with_tide_and_travelspeed.csv')
+    df = pd.read_csv(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data_with_predicted_R50_at_landfall.csv')
     #first merge global temp data
     df_temp_data = pd.read_csv('./Speciale/temp_data/data_global_ocean_temp.csv', skiprows=3)
     df = merge_temp_data(df, df_temp_data, 'Year')
+
     #then merge regional hadisst temp data
     df_temp_data = pd.read_csv('./Speciale/temp_data/mean_sst_regions_HadISST.csv')
     df = merge_temp_data_monthly(df, df_temp_data, ['Year', 'Month'])
@@ -493,11 +501,16 @@ if __name__ == "__main__":
     atd_weinkle.rename(rename_dict, axis=1, inplace=True)
 
     df = pd.merge(df, atd_weinkle, how='left', left_on='ATCF_ID', right_on='ATCF_ID')
+    print(df.columns)
+    quit()
     df_clean = df.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
+    print(df_clean.shape)
     df_clean = df_clean[df_clean['basedamage'] > 0]
+    print(df_clean.shape)
     df_clean = df_clean[df_clean['ND'] > 0]
-    BD = np.array(df_clean['basedamage'].values)
-    ND = np.array(df_clean['ND'].values)
+    print(df_clean.shape)
+
+    quit()
     
     
 
@@ -523,9 +536,8 @@ if __name__ == "__main__":
     # Define model specifications to compare
     model_specs = [
         {"economic": True,  "pressure": True},
-        {"economic": True, "pressure": True, "wind_power_law": True},
-        {"economic": True,  "wind_power_law": True},
-        #{"economic": True, "modelled_wind": True},
+        {"pressure": True, "trend": True},
+       {"pressure": True, "economic": True, "r50": True},
         # {"economic_atd": True, "trend": True, "modelled_wind": True, "travel_speed": True,  "mdr_icoads": True},
         # {"economic_atd": True, "trend": True, "modelled_wind": True, "seasonal":True},
         # {"economic_atd": True, "modelled_wind": True, "trend": True},
@@ -542,18 +554,8 @@ if __name__ == "__main__":
     # for spec in model_specs:
     #     traces = compare_model_by_period(df, spec, cutoff_year=1950, ATD=False, inflation=False, use_weinkle_atd=False, use_ulln=False)
     # Run comparison
-    df_clean = df_clean[df_clean['Year'] >= 2003]
-    df_clean = df_clean.dropna(subset=['rmw_at_landfall_m'])
 
-    # Convert to float first, then drop empty strings
-    df_clean['rmw_at_landfall_m'] = pd.to_numeric(df_clean['rmw_at_landfall_m'], errors='coerce')
-    df_clean = df_clean.dropna(subset=['rmw_at_landfall_m'])
-
-    # Now plot
-    plt.scatter( df_clean['rmw_at_landfall_m'], np.log(df_clean['basedamage']))
-    plt.show()
-    quit()
-    comparison_df, traces = compare_models(df, model_specs, ATD=False, inflation=True, use_weinkle_atd=False, use_ulln=False)
+    comparison_df, traces = compare_models(df, model_specs, ATD=False, inflation=False, use_weinkle_atd=False, use_ulln=False)
         # Compare both methods
 
 

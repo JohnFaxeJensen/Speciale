@@ -1,0 +1,87 @@
+import pandas as pd
+import numpy as np
+
+import sys
+sys.path.append(r"./Speciale/Code")
+
+from Data_preprocessing.generate_tide import generate_tide_data
+from Data_preprocessing.generate_region_temps import generate_temp_data
+from Data_preprocessing.generate_travel_speed import generate_travel_speed_data
+
+
+
+def generate_csv():
+    #use the orignal aslak data to merge temp data into
+    df = pd.read_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data.xls', sheet_name = 'ATD of ICAT')
+
+    #change string types to datetime
+    df['lf_ISO_TIME'] = pd.to_datetime(df['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
+    df['Year'] = df['lf_ISO_TIME'].dt.year
+    df['Month'] = df['lf_ISO_TIME'].dt.month
+    df['Day'] = df['lf_ISO_TIME'].dt.day
+
+    #first add tide data
+    print('pre_tide merge: ',df.shape)
+    df_for_for_tide = df[['ATCF_ID','lf_lat', 'lf_lon', 'lf_ISO_TIME']]
+    tide_data = generate_tide_data(df_for_for_tide)
+    print('tide data shape: ',tide_data.shape)
+
+    df = pd.merge(df, tide_data, how='left', left_on=['ATCF_ID', 'lf_lat', 'lf_lon'], right_on=['ATCF_ID', 'lf_lat', 'lf_lon'], suffixes=('', '_tide'))
+    columns_with_suffix = [col for col in df.columns if col.endswith('_tide')]
+    df = df.drop(columns_with_suffix, axis=1)
+    print('post_tide merge: ',df.shape)
+    #add temp data
+    hadisst_frame, icoads_frame = generate_temp_data(df)
+
+    #merge hadisst data
+    print('pre_hadisst merge: ',df.shape)
+    df = pd.merge(df, hadisst_frame, how='left', left_on=['Year', 'Month'], right_on=['Year', 'Month'], suffixes=('', '_hadisst'))
+    columns_with_suffix = [col for col in df.columns if col.endswith('_hadisst')]
+    df = df.drop(columns_with_suffix, axis=1)
+    print('post_hadisst merge: ',df.shape)
+    #merge icoads data
+    print('pre_icoads merge: ',df.shape)
+    df = pd.merge(df, icoads_frame, how='left', left_on=['Year', 'Month'], right_on=['Year', 'Month'], suffixes=('', '_icoads'))
+    columns_with_suffix = [col for col in df.columns if col.endswith('_icoads')]
+    df = df.drop(columns_with_suffix, axis=1)
+    print('post_icoads merge: ',df.shape)
+    #merge global temp data
+    print('pre_global_temp merge: ',df.shape)
+    df_global_ocean_anomaly = pd.read_csv('./Speciale/temp_data/data_global_ocean_temp.csv', skiprows=3)
+    df = pd.merge(df, df_global_ocean_anomaly, how='left', left_on='Year', right_on='Year')
+    df.rename({'Anomaly': 'Anomaly_global'}, axis=1, inplace=True)
+    print('post_global_temp merge: ',df.shape)
+    #merge ibtracs data for travelspeed
+    relevant_columns_for_travelspeed = ['ATCF_ID', 'lf_ISO_TIME', 'lf_lat', 'lf_lon']
+    travelspeed_df = generate_travel_speed_data(df[relevant_columns_for_travelspeed])
+    print("Travelspeed data shape:", travelspeed_df.shape)
+    df = pd.merge(df, travelspeed_df, how='left', left_on=['ATCF_ID', 'lf_lat', 'lf_lon'], right_on=['ATCF_ID', 'lf_lat', 'lf_lon'], suffixes=('', '_travelspeed'))
+    columns_with_suffix = [col for col in df.columns if col.endswith('_travelspeed')]
+    df = df.drop(columns_with_suffix, axis=1)
+    print("Final dataframe shape:", df.shape)
+
+    #add machine learning predictions.
+
+
+    quit()
+
+    df = pd.read_csv(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data_with_predicted_R50_at_landfall.csv')
+
+    #try the weinkle basedamage data. reformat to merge with main df
+    df_weinkle_data = pd.read_excel('./Speciale/Hurricane_data/Aslak_data.xls', sheet_name='ATD of Weinkle')
+    atd_weinkle = df_weinkle_data[['ATCF_ID', 'ATD', 'basedamage', 'ND']]
+    atd_weinkle['multiplier'] = atd_weinkle['ND'] / atd_weinkle['basedamage']
+    rename_dict = {'ATD': 'ATD_weinkle', 'basedamage': 'basedamage_weinkle', 'ND': 'ND_weinkle'}
+    atd_weinkle.rename(rename_dict, axis=1, inplace=True)
+
+    df = pd.merge(df, atd_weinkle, how='left', left_on='ATCF_ID', right_on='ATCF_ID')
+    print(df.columns)
+    quit()
+    df_clean = df.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
+    print(df_clean.shape)
+    df_clean = df_clean[df_clean['basedamage'] > 0]
+    print(df_clean.shape)
+    df_clean = df_clean[df_clean['ND'] > 0]
+    print(df_clean.shape)
+
+generate_csv()

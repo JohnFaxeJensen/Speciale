@@ -5,36 +5,27 @@ import numpy as np
 from geopy import distance
 import matplotlib.pyplot as plt
 
-I = Ibtracs()
-# raw_hurricane_data = pd.read_csv(r"C:\Users\123ti\Downloads\ibtracs.ALL.list.v04r01.csv", usecols=["ISO_TIME", "LAT", "LON", "WMO_WIND", "WMO_PRES","USA_ATCF_ID", "USA_LAT", "USA_LON", 
-#                                                                                                    "USA_WIND", "USA_PRES", "STORM_SPEED", "USA_R64_NE", "USA_R64_SE", "USA_R64_SW", "USA_R64_NW",
-#                                                                                                    "USA_R34_NE", "USA_R34_SE", "USA_R34_SW", "USA_R34_NW",
-#                                                                                                    "USA_R50_NE", "USA_R50_SE", "USA_R50_SW", "USA_R50_NW",],low_memory=False)
 
-I = Ibtracs()
-# raw_hurricane_data = pd.read_csv(r"C:\Users\123ti\Downloads\ibtracs.ALL.list.v04r01.csv", usecols=["ISO_TIME", "LAT", "LON", "WMO_WIND", "WMO_PRES","USA_ATCF_ID", "USA_LAT", "USA_LON", 
+# raw_hurricane_data = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\ibtracs.ALL.list.v04r01.csv", usecols=["ISO_TIME", "LAT", "LON", "WMO_WIND", "WMO_PRES","USA_ATCF_ID", "USA_LAT", "USA_LON", 
 #                                                                                                    "USA_WIND", "USA_PRES", "STORM_SPEED", "USA_R64_NE", "USA_R64_SE", "USA_R64_SW", "USA_R64_NW",
 #                                                                                                    "USA_R34_NE", "USA_R34_SE", "USA_R34_SW", "USA_R34_NW",
-#                                                                                                    "USA_R50_NE", "USA_R50_SE", "USA_R50_SW", "USA_R50_NW",],low_memory=False)
+#                                                                                                    "USA_R50_NE", "USA_R50_SE", "USA_R50_SW", "USA_R50_NW",
+#                                                                                                    'DIST2LAND', 'STORM_DIR'],low_memory=False)
 # hurricane_data = pd.read_csv(r"./Speciale/Hurricane_data/Aslak_data_with_tide.csv")
 # unique_ids = hurricane_data['ATCF_ID'].unique()
 # filtered_hurricane_data = raw_hurricane_data[raw_hurricane_data['USA_ATCF_ID'].isin(unique_ids)]
 # #save to csv
-# filtered_hurricane_data.to_csv(r"./Speciale/Hurricane_data/IBTrACS_filtered_data.csv", index=False)
+# filtered_hurricane_data.to_csv(r"\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\IBTrACS_filtered_data.csv", index=False)
 
-def calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, landfall_lon, Filtered_IBTrACS_data, radii_types=['r34', 'r50', 'r64']):
-    """
-    Calculate travel speed and wind radii at landfall for multiple radius types.
-    
-    Parameters:
-    -----------
-    radii_types : list of str
-        Wind radii to extract: 'r34', 'r50', 'r64', etc.
-        
-    Returns:
-    --------
-    dict with speeds and radii for all requested types
-    """
+# quit()
+
+def safe_inv_boxcox(y_transformed, lambda_param, offset=0.1):
+    """Inverse Box-Cox transform and remove offset, handling NaN values"""
+    y_original = inv_boxcox(y_transformed, lambda_param)
+    y_original = np.maximum(y_original - offset, 0)  # Ensure non-negative
+    # Replace any NaN with 0
+    y_original = np.where(np.isnan(y_original), 0, y_original)
+    return y_original
 def calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, landfall_lon, Filtered_IBTrACS_data, radii_types=['r34', 'r50', 'r64']):
     """
     Calculate travel speed and wind radii at landfall for multiple radius types.
@@ -52,10 +43,9 @@ def calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, l
     lats = Filtered_IBTrACS_data['LAT'].values
     lons = Filtered_IBTrACS_data['LON'].values
     storm_speeds = Filtered_IBTrACS_data['STORM_SPEED'].values
-    storm_speeds = Filtered_IBTrACS_data['STORM_SPEED'].values
+    dist_2_land = Filtered_IBTrACS_data['DIST2LAND'].values
+    storm_dirs = Filtered_IBTrACS_data['STORM_DIR'].values
 
-    if hurricane_id == "AL051965":
-        landfall_time = pd.to_datetime("1965-09-29 20:00:00")
     if hurricane_id == "AL051965":
         landfall_time = pd.to_datetime("1965-09-29 20:00:00")
     else:
@@ -68,9 +58,7 @@ def calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, l
     if len(times_before) == 0 or len(times_after) == 0:
         print(f"Not enough data before/after landfall for {hurricane_id}")
         return None
-        print(f"Not enough data before/after landfall for {hurricane_id}")
-        return None
-    
+
     before_time = times_before.max()
     after_time = times_after.min()
     
@@ -82,8 +70,6 @@ def calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, l
     after_lat = lats[after_index]
     after_lon = lons[after_index]
 
-    before_time = pd.to_datetime(before_time)
-    after_time = pd.to_datetime(after_time)
 
     time_delta_before = landfall_time - before_time
     time_delta_after = after_time - landfall_time
@@ -91,18 +77,8 @@ def calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, l
     closest_index = before_index if time_delta_before <= time_delta_after else after_index
     
     ibtracs_speed_at_landfall = storm_speeds[closest_index]
-    
-
-    before_time = pd.to_datetime(before_time)
-    after_time = pd.to_datetime(after_time)
-
-    time_delta_before = landfall_time - before_time
-    time_delta_after = after_time - landfall_time
-    
-    closest_index = before_index if time_delta_before <= time_delta_after else after_index
-    
-    ibtracs_speed_at_landfall = storm_speeds[closest_index]
-    
+    dist2land_at_landfall = dist_2_land[closest_index]
+    storm_dir_at_landfall = storm_dirs[closest_index]
     landfall_geo = (landfall_lat, landfall_lon)
     before_geo = (before_lat, before_lon)
     after_geo = (after_lat, after_lon)
@@ -122,7 +98,9 @@ def calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, l
         'speed_before': speed_before,
         'speed_after': speed_after,
         'speed_at_landfall': speed_at_landfall,
-        'ibtracs_speed_at_landfall': ibtracs_speed_at_landfall
+        'STORM_SPEED': ibtracs_speed_at_landfall,
+        'DIST2LAND': dist2land_at_landfall,
+        'STORM_DIR': storm_dir_at_landfall
     }
 
     # Extract radii for all requested types
@@ -186,7 +164,7 @@ def calculate_mean_radius(ne, se, sw, nw):
     """Calculate mean radius from 4 quadrants"""
     try:
         ne, se, sw, nw = float(ne), float(se), float(sw), float(nw)
-        if any(x <= 0 for x in [ne, se, sw, nw]):
+        if any(x < 0 for x in [ne, se, sw, nw]):
             return np.nan
         return np.mean([ne, se, sw, nw])
     except (ValueError, TypeError):
@@ -205,6 +183,8 @@ speeds_before = []
 speeds_after = []
 speeds_at_landfall = []
 Ibtracs_speeds_at_landfall = []
+storm_dirs_at_landfall = []
+dist2land_at_landfall = []
 radii_data = {rt: {'ne': [], 'se': [], 'sw': [], 'nw': [], 'area': [], 'max': [], 'mean': []} for rt in RADII_TYPES}
 
 # Process each hurricane
@@ -228,6 +208,8 @@ for index, row in relevant_data.iterrows():
         speeds_after.append(None)
         speeds_at_landfall.append(None)
         Ibtracs_speeds_at_landfall.append(None)
+        storm_dirs_at_landfall.append(None)
+        dist2land_at_landfall.append(None)
         for rt in RADII_TYPES:
             radii_data[rt]['ne'].append(None)
             radii_data[rt]['se'].append(None)
@@ -240,7 +222,9 @@ for index, row in relevant_data.iterrows():
     speeds_before.append(results['speed_before'])
     speeds_after.append(results['speed_after'])
     speeds_at_landfall.append(results['speed_at_landfall'])
-    Ibtracs_speeds_at_landfall.append(results['ibtracs_speed_at_landfall'])
+    Ibtracs_speeds_at_landfall.append(results['STORM_SPEED'])
+    storm_dirs_at_landfall.append(results['STORM_DIR'])
+    dist2land_at_landfall.append(results['DIST2LAND'])
     
     # Extract and calculate area, max, and mean for each radii type
     for rt in RADII_TYPES:
@@ -260,52 +244,16 @@ for index, row in relevant_data.iterrows():
         radii_data[rt]['area'].append(area)
         radii_data[rt]['mean'].append(mean_rad)
 
-# Add speed columns
-    results = calculate_travelspeed_and_radii(hurricane_id, landfall_time, landfall_lat, landfall_lon, 
-                                               filtered_IBTrACS_data, RADII_TYPES)
+
     
-    if results is None:
-        speeds_before.append(None)
-        speeds_after.append(None)
-        speeds_at_landfall.append(None)
-        Ibtracs_speeds_at_landfall.append(None)
-        for rt in RADII_TYPES:
-            radii_data[rt]['ne'].append(None)
-            radii_data[rt]['se'].append(None)
-            radii_data[rt]['sw'].append(None)
-            radii_data[rt]['nw'].append(None)
-            radii_data[rt]['area'].append(None)
-            radii_data[rt]['mean'].append(None)
-        continue
-    
-    speeds_before.append(results['speed_before'])
-    speeds_after.append(results['speed_after'])
-    speeds_at_landfall.append(results['speed_at_landfall'])
-    Ibtracs_speeds_at_landfall.append(results['ibtracs_speed_at_landfall'])
-    
-    # Extract and calculate area, max, and mean for each radii type
-    for rt in RADII_TYPES:
-        ne = results.get(f'{rt}_ne')
-        se = results.get(f'{rt}_se')
-        sw = results.get(f'{rt}_sw')
-        nw = results.get(f'{rt}_nw')
-        
-        radii_data[rt]['ne'].append(ne)
-        radii_data[rt]['se'].append(se)
-        radii_data[rt]['sw'].append(sw)
-        radii_data[rt]['nw'].append(nw)
-        
-        area = calculate_wind_field_area(ne, se, sw, nw)
-        mean_rad = calculate_mean_radius(ne, se, sw, nw)
-        
-        radii_data[rt]['area'].append(area)
-        radii_data[rt]['mean'].append(mean_rad)
 
 # Add speed columns
 hurricane_data['travel_speed_before_landfall_m_s'] = speeds_before
 hurricane_data['travel_speed_after_landfall_m_s'] = speeds_after
 hurricane_data['travel_speed_at_landfall_m_s'] = speeds_at_landfall
-hurricane_data['ibtracs_speed_at_landfall_m_s'] = Ibtracs_speeds_at_landfall
+hurricane_data['STORM_SPEED'] = Ibtracs_speeds_at_landfall
+hurricane_data['DIST2LAND'] = dist2land_at_landfall
+hurricane_data['STORM_DIR'] = storm_dirs_at_landfall
 
 # Add radii and area columns
 for rt in RADII_TYPES:
@@ -316,30 +264,95 @@ for rt in RADII_TYPES:
     hurricane_data[f'{rt}_area_at_landfall'] = radii_data[rt]['area']
     hurricane_data[f'{rt}_mean_at_landfall'] = radii_data[rt]['mean']
 
+#handle NaN values after 2004, where NAN means mean radius 0
+hurricane_data['r64_mean_at_landfall'] = np.where(hurricane_data['r64_mean_at_landfall'].isna() & (hurricane_data['lf_ISO_TIME'] >= '2004-01-01'), 0, hurricane_data['r64_mean_at_landfall'])
+hurricane_data['r50_mean_at_landfall'] = np.where(hurricane_data['r50_mean_at_landfall'].isna() & (hurricane_data['lf_ISO_TIME'] >= '2004-01-01'), 0, hurricane_data['r50_mean_at_landfall'])
 # Save updated data
 hurricane_data.to_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data_with_tide_and_travelspeed.csv", index=False)
 
-# Visualization: Compare all metrics for each radii type
-hurricane_data['lf_ISO_TIME'] = pd.to_datetime(hurricane_data['lf_ISO_TIME'], errors='coerce')
-df_recent = hurricane_data[hurricane_data['lf_ISO_TIME'].dt.year >= 2003].copy()
+rename_dict = {
+    'lf_lat': 'LAT',
+    'lf_lon': 'LON',
+    'lf_wind': 'USA_WIND',
+    'lf_pressure': 'USA_PRES',
+}
+hurricane_data = hurricane_data.rename(columns=rename_dict)
+hurricane_data['Month'] = pd.to_datetime(hurricane_data['lf_ISO_TIME']).dt.month
+hurricane_data['Year'] = pd.to_datetime(hurricane_data['lf_ISO_TIME']).dt.year
+hurricane_data['Day'] = pd.to_datetime(hurricane_data['lf_ISO_TIME']).dt.day
 
-# Create subplots: 3 radii types x 3 metrics (area, max, mean)
-fig, axes = plt.subplots(3, 2, figsize=(15, 12))
-colors = ['blue', 'orange', 'red']
-metrics = ['area', 'mean']
+feature_columns = ['LAT', 'LON', 'USA_WIND', 'USA_PRES', 'STORM_SPEED', 'Month', 'Year', 'Day','DIST2LAND', 'STORM_DIR']
+#Lets try to visualize basedamage vs mean wind radius at landfall
+#predict r64 mean radius from ML
+import joblib
+import pickle
+from sklearn.preprocessing import StandardScaler
 
-for i, rt in enumerate(RADII_TYPES):
-    for j, metric in enumerate(metrics):
+scaler = StandardScaler()
+no_r64_data = hurricane_data[hurricane_data['r64_mean_at_landfall'].isna()]
+classifier_model = joblib.load(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\models\xgb_baseline_classifier_model.joblib")
 
-        col_name = f'{rt}_{metric}_at_landfall'
-        df_plot = df_recent.dropna(subset=[col_name, 'basedamage'])
-        
-        axes[i, j].scatter(np.log(df_plot['basedamage']), df_plot[col_name], 
-                          alpha=0.6, color=colors[i], s=50)
-        axes[i, j].set_xlabel('Log(Base Damage)')
-        axes[i, j].set_ylabel(f'{rt.upper()} {metric.upper()}')
-        axes[i, j].set_title(f'{rt.upper()} {metric.upper()} vs Damage')
-        axes[i, j].grid(True, alpha=0.3)
+# Prepare features with EXACT column names
+X_no_r64 = no_r64_data[feature_columns].copy()
 
-plt.tight_layout()
+
+# Rename to match training column names
+
+
+# Ensure column order matches training
+
+X_no_r64 = X_no_r64[feature_columns]
+
+
+# CRITICAL: Scale features using the SAME scaler
+X_no_r64_scaled = scaler.fit_transform(X_no_r64)
+
+classifier_predictions = classifier_model.predict(X_no_r64_scaled)
+# Filter data predicted as having r64 > 0
+print("Predicted classes for missing r64 mean data:", classifier_predictions)
+no_r64_data['has_r64'] = classifier_predictions
+#rename 1=True, 0=False
+no_r64_data['has_r64'] = no_r64_data['has_r64'].map({1: True, 0: False})
+
+classified_to_have_r64 = no_r64_data[no_r64_data['has_r64'] == True]
+classified_to_not_have_r64 = no_r64_data[no_r64_data['has_r64'] == False]
+classified_to_not_have_r64['r64_mean_at_landfall'] = 0
+hurricane_data.update(classified_to_not_have_r64)
+# Predict damage class based on 
+
+from scipy.special import inv_boxcox
+
+# Load the trained model, scaler, and lambda
+model = joblib.load(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\models\xgb_best_model.joblib")
+
+#load lambda
+with open(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\models\xgb_fitted_lambda.pkl", "rb") as f:
+    fitted_lambda = pickle.load(f)
+xgb_best = model
+
+
+
+
+X_regression = classified_to_have_r64[feature_columns].copy()
+
+# Make predictions on scaled data
+y_pred_transformed = xgb_best.predict(X_regression)
+
+# CRITICAL: Inverse Box-Cox transform to get back to original scale
+y_pred_original = safe_inv_boxcox(y_pred_transformed, fitted_lambda, offset=0.1)
+
+
+# Add predictions to dataframe
+classified_to_have_r64_idx = classified_to_have_r64.index
+hurricane_data.update(pd.DataFrame({'r64_mean_at_landfall': y_pred_original}, index=classified_to_have_r64_idx))
+hurricane_data = hurricane_data[hurricane_data['ND'] > 0]
+norm_damage = hurricane_data['ND'].values
+mean_r64 = hurricane_data['r64_mean_at_landfall'].values
+plt.scatter(mean_r64, np.log(norm_damage))
+plt.xlabel('Mean R64 at Landfall (km)')
+plt.ylabel('Normalized Damage')
+plt.title('Normalized Damage vs Mean R64 at Landfall')
+plt.grid()
 plt.show()
+
+hurricane_data.to_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data_with_tide_and_travelspeed_and_ML_r64.csv", index=False)

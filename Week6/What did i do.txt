@@ -2,3 +2,5 @@ Monday: Loading in the actual observational sst data. Gotten from https://psl.no
 
 Tuesday: trying to figure out if I should use ATD or basedamage or what gives the best predictive parameters 
 
+
+Wednesday: Trying ML for estimating R34. imputer or just simple linear regression. R64 ideally 

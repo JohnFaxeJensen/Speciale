@@ -189,7 +189,7 @@ if __name__ == "__main__":
     
     # Load and merge temperature data if needed
     df_temp_data = pd.read_csv('./Speciale/temp_data/data_global_ocean_temp.csv', skiprows=3)
-    from merge_temp import merge_temp_data, merge_temp_data_monthly
+    from Speciale.Code.merge_temp import merge_temp_data, merge_temp_data_monthly
     df = merge_temp_data(df, df_temp_data, 'Year')
     
     # Create teleconnection map using ICOADS (observed data)
