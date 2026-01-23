@@ -2,70 +2,11 @@
 import os
 import pandas as pd
 import numpy as np
+import sys
+sys.path.append(r"./Speciale/Code")
+from Data_preprocessing.ML.ml_utils import calculate_mean_wind_radius, calculate_wind_field_area, FEATURE_COLUMNS
 
-
-feature_columns = ['LAT', 'LON', 'USA_WIND', 'USA_PRES', 'STORM_SPEED_ms', 'Month' , 'Year', 'Day', 'DIST2LAND_m', 'STORM_DIR']
-
-def calculate_wind_field_area(ne, se, sw, nw):
-    """
-    Calculate wind field area intelligently:
-    - All 4 quadrants: use elliptical approximation (captures asymmetry)
-    - <4 quadrants: sum circular sectors (no data inference)
-    
-    Returns area in km²
-    """
-    # Collect valid radii
-    radii_dict = {'ne': ne, 'se': se, 'sw': sw, 'nw': nw}
-    valid_radii = {}
-    
-    for name, r in radii_dict.items():
-        if pd.isna(r):
-            continue
-        try:
-            r_val = float(r)
-            if r_val >= 0:
-                valid_radii[name] = r_val
-        except (ValueError, TypeError):
-            continue
-    
-    if len(valid_radii) == 0:
-        return np.nan
-    
-    # Case 1: All 4 quadrants → ellipse (captures asymmetry)
-    if len(valid_radii) == 4:
-        semi_major = (valid_radii['ne'] + valid_radii['sw']) / 2
-        semi_minor = (valid_radii['nw'] + valid_radii['se']) / 2
-        area_nm2 = np.pi * semi_major * semi_minor
-        return area_nm2 * 3.434  # nm² to km²
-    
-    # Case 2: <4 quadrants → sum of circular sectors
-    # Each sector is (π/4) * r²
-    sum_sector_area_nm2 = (np.pi / 4) * sum(r**2 for r in valid_radii.values())
-    return sum_sector_area_nm2 * 3.434
-
-def calculate_mean_wind_radius(ne, se, sw, nw):
-    """
-    Calculate mean wind radius from available quadrant radii.
-    Returns mean radius in km
-    """
-    radii = []
-    for r in [ne, se, sw, nw]:
-        if pd.isna(r):
-            continue
-        try:
-            r_val = float(r)
-            if r_val >= 0:
-                radii.append(r_val)
-        except (ValueError, TypeError):
-            continue
-    
-    if len(radii) == 0:
-        return np.nan
-    if len(radii) < 4:
-        while len(radii) < 4:
-            radii.append(0) #maybe impute later
-    
-    return np.mean(radii)
+feature_columns = FEATURE_COLUMNS
 
 
 def get_training_data():
@@ -112,7 +53,7 @@ def get_training_data():
         hurricane_data[radius[1]] = pd.to_numeric(hurricane_data[radius[1]], errors='coerce')
         hurricane_data[radius[2]] = pd.to_numeric(hurricane_data[radius[2]], errors='coerce')
         hurricane_data[radius[3]] = pd.to_numeric(hurricane_data[radius[3]], errors='coerce')
-    
+
     #remove pre2004 data due to different measurement standards
     hurricane_data = hurricane_data[hurricane_data['Year'] >= 2004]
     for radius_name, radius_cols in radius_types.items():

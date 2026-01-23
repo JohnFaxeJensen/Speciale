@@ -12,4 +12,13 @@ HadCruT 5
 
 sum log(damage) for hvert år correlation med hadsst for hver pixel til at lave map. Teleconnection map.
 
-tobias Geiger potsdam
+tobias Geiger Potsdam
+
+Log(BD) = (logRWPC + logpop) + log(I) + a*robotness. Exposure er lineært. Evt beskriv på pixel niveau hvis man havde dataet.  
+
+Beskriv ønskemodel.
+
+How trustworthy is the data measurement both physical measurements and damage measurements.
+
+kan evt lave en stram prior på economic const, hvorfor er dette ikke optimalt? højst sandsynligt pga så antager vi automatisk er der ikke er nogen trends i det økonomiske data, hvilket ville være uoptimalt.
+ 

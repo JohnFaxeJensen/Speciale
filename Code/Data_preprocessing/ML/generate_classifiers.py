@@ -3,17 +3,18 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+import sys
+sys.path.append(r"./Speciale/Code")
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+
 from sklearn.metrics import roc_auc_score, classification_report
 import xgboost as xgb
 from sklearn.model_selection import cross_val_score, KFold
-
+from Data_preprocessing.ML.ml_utils import FEATURE_COLUMNS
 
 import joblib
 import generate_training_data
-feature_columns = ['LAT', 'LON', 'USA_WIND', 'USA_PRES', 'STORM_SPEED_ms', 'Month' , 'Year', 'Day', 'DIST2LAND_m', 'STORM_DIR']
+feature_columns = FEATURE_COLUMNS
 
 training_data = generate_training_data.get_training_data()
 def create_classifier(radius):
@@ -45,11 +46,7 @@ def create_classifier(radius):
     print("\nSplitting data...")
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Standardize features
-    print("Standardizing features...")
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+
 
     kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
@@ -70,12 +67,12 @@ def create_classifier(radius):
 
     # Cross-validation scores (accuracy and AUC) - NO eval_set
     cv_scores_accuracy = cross_val_score(
-        xgb_classifier_baseline, X_train_scaled, y_train, 
+        xgb_classifier_baseline, X_train, y_train, 
         cv=kfold, scoring='accuracy', n_jobs=-1
     )
 
     cv_scores_auc = cross_val_score(
-        xgb_classifier_baseline, X_train_scaled, y_train, 
+        xgb_classifier_baseline, X_train, y_train, 
         cv=kfold, scoring='roc_auc', n_jobs=-1
     )
 
@@ -86,17 +83,17 @@ def create_classifier(radius):
 
     # Train on full training set for final test evaluation
     xgb_classifier_baseline.fit(
-        X_train_scaled, y_train, 
-        eval_set=[(X_test_scaled, y_test)], 
+        X_train, y_train, 
+        eval_set=[(X_test, y_test)], 
         verbose=False
     )
 
-    y_pred_baseline = xgb_classifier_baseline.predict(X_test_scaled)
-    y_pred_proba_baseline = xgb_classifier_baseline.predict_proba(X_test_scaled)[:, 1]
+    y_pred_baseline = xgb_classifier_baseline.predict(X_test)
+    y_pred_proba_baseline = xgb_classifier_baseline.predict_proba(X_test)[:, 1]
 
 
-    train_score_baseline = xgb_classifier_baseline.score(X_train_scaled, y_train)
-    test_score_baseline = xgb_classifier_baseline.score(X_test_scaled, y_test)
+    train_score_baseline = xgb_classifier_baseline.score(X_train, y_train)
+    test_score_baseline = xgb_classifier_baseline.score(X_test, y_test)
     auc_baseline = roc_auc_score(y_test, y_pred_proba_baseline)
 
     print(f"\nTest Set Performance:")

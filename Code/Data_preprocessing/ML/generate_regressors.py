@@ -5,31 +5,27 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, r2_score
 import xgboost as xgb
 
-
+import sys
+sys.path.append(r"./Speciale/Code")
 from skopt import gp_minimize
 from skopt.space import Real, Integer
 from skopt.utils import use_named_args
 from scipy.stats import boxcox
-from scipy.special import inv_boxcox
+
 import joblib
 import generate_training_data
 import pickle
 
-feature_columns = ['LAT', 'LON', 'USA_WIND', 'USA_PRES', 'STORM_SPEED_ms', 'Month' , 'Year', 'Day', 'DIST2LAND_m', 'STORM_DIR']
+from Data_preprocessing.ML.ml_utils import safe_inv_boxcox, FEATURE_COLUMNS, calculate_mean_wind_radius
+
+feature_columns = FEATURE_COLUMNS
 
 training_data = generate_training_data.get_training_data()
 
-def safe_inv_boxcox(y_transformed, lambda_param, offset=0.1):
-    """Inverse Box-Cox transform and remove offset, handling NaN values"""
-    y_original = inv_boxcox(y_transformed, lambda_param)
-    y_original = np.maximum(y_original - offset, 0)  # Ensure non-negative
-    # Replace any NaN with 0
-    y_original = np.where(np.isnan(y_original), 0, y_original)
-    return y_original
+
 def create_regressor(radius):
     model_dir = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\ML\regressors"
     model_path = os.path.join(model_dir, f"model_{radius}.joblib")
@@ -58,11 +54,6 @@ def create_regressor(radius):
     print("\nSplitting data...")
     X_train, X_test, y_train, y_test = train_test_split(X, y_transformed, test_size=0.2, random_state=42)
 
-    # Standardize features
-    print("Standardizing features...")
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
 
     # Baseline model
     print("\n" + "="*60)
@@ -76,8 +67,8 @@ def create_regressor(radius):
         early_stopping_rounds=10
     )
 
-    xgb_baseline.fit(X_train_scaled, y_train, eval_set=[(X_test_scaled, y_test)], verbose=False)
-    y_pred_transformed = xgb_baseline.predict(X_test_scaled)
+    xgb_baseline.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+    y_pred_transformed = xgb_baseline.predict(X_test)
 
     y_pred_baseline = safe_inv_boxcox(y_pred_transformed, fitted_lambda, offset=0.1)  # Inverse boxcox-transform
 
@@ -126,8 +117,8 @@ def create_regressor(radius):
             early_stopping_rounds=20
         )
         
-        model.fit(X_train_scaled, y_train, eval_set=[(X_test_scaled, y_test)], verbose=False)
-        y_pred = model.predict(X_test_scaled)
+        model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+        y_pred = model.predict(X_test)
         y_pred_original = safe_inv_boxcox(y_pred, fitted_lambda, offset=0.1)  # FIX: Transform back
         y_test_original = safe_inv_boxcox(y_test, fitted_lambda, offset=0.1)  # FIX: Transform back
         r2 = r2_score(y_test_original, y_pred_original)  # FIX: Evaluate on original scale
@@ -166,8 +157,8 @@ def create_regressor(radius):
         **best_params
     )
 
-    xgb_best.fit(X_train_scaled, y_train, eval_set=[(X_test_scaled, y_test)], verbose=False)
-    y_pred_best_transformed = xgb_best.predict(X_test_scaled)
+    xgb_best.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+    y_pred_best_transformed = xgb_best.predict(X_test)
     y_pred_best = safe_inv_boxcox(y_pred_best_transformed, fitted_lambda, offset=0.1)  # Transform back
     y_test_original = safe_inv_boxcox(y_test, fitted_lambda, offset=0.1)  # Transform back
 

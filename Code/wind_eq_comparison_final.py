@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import os
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+
+    #Here is the wind models comparisons using models from the paper:
+    #https://journals.ametsoc.org/view/journals/mwre/136/9/2008mwr2395.1.pdf
+    
 # df = pd.read_csv('./Speciale/Hurricane_data/Aslak_data_with_tide_and_travelspeed.csv')
 # df_clean = df.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure'])
 # df_clean = df_clean[df_clean['basedamage'] > 0]
