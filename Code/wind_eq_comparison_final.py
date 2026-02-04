@@ -15,7 +15,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 # df_clean = df_clean[df_clean['ND'] > 0]
 
 def equation_11_wind(pressure, lat, travel_speed):
-    delta_p = 1015 - pressure
+    delta_p = 1013.25 - pressure
     phi = np.abs(lat)
     v_t = travel_speed  # m/s
 
@@ -33,10 +33,10 @@ def test_pressure_to_wind_models():
 
     # --- Model calculations ---
     pressure_to_wind_version_1 = 2.3*(1010-pressure)**0.76*1.94384  # Eq (4) Knaff & Zehr
-    pressure_to_wind_version_2 = 3.92*(1015-pressure)**0.644*1.94384  # Eq (3) Dvorak Atlantic
+    pressure_to_wind_version_2 = 3.92*(1013.25-pressure)**0.644*1.94384  # Eq (3) Dvorak Atlantic
 
     # Simplified Eq (11)
-    delta_p = 1015 - pressure
+    delta_p = 1013.25 - pressure
     phi = np.abs(df_clean['lf_lat'].values)
     v_t = df_clean['travel_speed_after_landfall_m_s'].values  # m/s
 

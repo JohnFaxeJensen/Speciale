@@ -159,7 +159,7 @@ def generate_surge_data(df):
     surge_data['Storm Name'] = surge_data['Storm Name'].str.encode('ascii', 'ignore').str.decode('ascii').str.strip()
     surge_data = surge_data[surge_data['Year'] >= 1900]
 
-    surge_data = surge_data[['Storm Name','Surge_m', 'Surge_ft','Storm_Tide_m', 'Storm_Tide_ft', 'Year', 'State', 'Lat', 'Lon', 'Storm Dates']]
+    surge_data = surge_data[['Surge ID','Datum','Storm Name','Surge_m', 'Surge_ft','Storm_Tide_m', 'Storm_Tide_ft', 'Year', 'State', 'Lat', 'Lon', 'Storm Dates']]
     dates =surge_data['Storm Dates'].values.tolist()
     start_dates = []
     end_dates = []
@@ -174,7 +174,7 @@ def generate_surge_data(df):
     
 
     #merge on df and do left join, fill missing values manually afterwards
-    df_for_surge_merge = df[['Unique_ID','name', 'Year', 'lf_state', 'lf_lat', 'lf_lon', 'lf_ISO_TIME']]
+    df_for_surge_merge = df[['Unique_ID','ATCF_ID','name', 'Year', 'lf_state', 'lf_lat', 'lf_lon', 'lf_ISO_TIME']]
 
     def append_none_values(lists_dict):
         """Helper function to append None to all tracking lists"""
@@ -183,6 +183,8 @@ def generate_surge_data(df):
     
     def append_surge_values(surge_row, lists_dict):
         """Helper function to append surge data from a row"""
+        lists_dict['surge_id'].append(surge_row['Surge ID'])
+        lists_dict['datum'].append(surge_row['Datum'])
         lists_dict['surge_ms'].append(surge_row['Surge_m'])
         lists_dict['surge_ft'].append(surge_row['Surge_ft'])
         lists_dict['storm_tide_m'].append(surge_row['Storm_Tide_m'])
@@ -194,6 +196,8 @@ def generate_surge_data(df):
 
     #try different merge approach to find closest lat/lon
     result_lists = {
+        'surge_id': [],
+        'datum': [],
         'surge_ms': [],
         'surge_ft': [],
         'storm_tide_m': [],
@@ -300,7 +304,8 @@ def generate_surge_data(df):
             append_surge_values(closest_surge, result_lists)
         else:
             append_none_values(result_lists)
-
+    df_for_surge_merge['Surge_ID'] = result_lists['surge_id']
+    df_for_surge_merge['Datum'] = result_lists['datum']
     df_for_surge_merge['Surge_m'] = result_lists['surge_ms']
     df_for_surge_merge['Surge_ft'] = result_lists['surge_ft']
     df_for_surge_merge['Storm_Tide_m'] = result_lists['storm_tide_m']
@@ -321,10 +326,7 @@ def generate_surge_data(df):
             elif not pd.isna(row['Surge_m']):
                 #add artificial tide height of 0.4m to surge to estimate storm tide
                 df_for_surge_merge.at[row_index, 'Storm_Tide_m'] = float(row['Surge_m']) + 0.4
-            #try Surge_ft
-            elif not pd.isna(row['Surge_ft']):
-                df_for_surge_merge.at[row_index, 'Storm_Tide_m'] = (float(row['Surge_ft']) * 0.3048) + 0.4
-    df_for_surge_merge.to_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection.xlsx', index=False)
+
     
     # Export sketchy matches
     if sketchy_matches:
@@ -334,11 +336,74 @@ def generate_surge_data(df):
         print(sketchy_df)
     else:
         print("\nNo sketchy matches found!")
-    
-    print(df_for_surge_merge.columns)
-    quit()
-    df_for_surge_merge.to_csv(path, index=False)
+    surge_data_df = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\raw_tool_data\all_surge_data.csv")
+
+    for row, index in df_for_surge_merge.iterrows():
+        name = index['name'].strip()
+        year = index['Year']
+        matching_surge = surge_data_df[(surge_data_df['Storm Name'].str.strip() == name) & (surge_data_df['Year'] == year)]
+        if not matching_surge.empty:
+            #find the highest value within 2 degrees lat/lon in total
+            lat = index['lf_lat']
+            lon = index['lf_lon']
+            matching_surge['lat_diff'] = (matching_surge['Lat'] - lat).abs()
+            matching_surge['lon_diff'] = (matching_surge['Lon'] - lon).abs()
+            matching_surge['total_diff'] = matching_surge['lat_diff'] + matching_surge['lon_diff']
+            #filter to only those within 2 degrees total
+            matching_surge = matching_surge[matching_surge['total_diff'] <= 2]
+            #pick the highest one of surge_m and storm_tide_m
+
+        if not matching_surge.empty:
+            # Get indices of max values, handling NaN
+            surge_idx = matching_surge['Surge_m'].idxmax()
+            tide_idx = matching_surge['Storm_Tide_m'].idxmax()
+            
+            # Check if we got valid indices (not NaN)
+            has_surge = pd.notna(surge_idx)
+            has_tide = pd.notna(tide_idx)
+            
+            if has_surge and has_tide:
+                best_surge = matching_surge.loc[surge_idx]
+                best_tide = matching_surge.loc[tide_idx]
+                best_data = best_tide if best_tide['Storm_Tide_m'] > best_surge['Surge_m'] else best_surge
+            elif has_surge:
+                best_data = matching_surge.loc[surge_idx]
+            elif has_tide:
+                best_data = matching_surge.loc[tide_idx]
+            else:
+                continue  # Skip if neither has valid data
+            
+            # Add values in new columns to preproccessed_hurricane_df
+            df_for_surge_merge.at[row, f'Surge_m'] = best_data['Surge_m']
+            df_for_surge_merge.at[row, f'Surge_ft'] = best_data['Surge_ft']
+            df_for_surge_merge.at[row, f'Storm_Tide_m'] = best_data['Storm_Tide_m']
+            df_for_surge_merge.at[row, f'Storm_Tide_ft'] = best_data['Storm_Tide_ft']
+            df_for_surge_merge.at[row, f'Datum'] = best_data['Datum']
+            df_for_surge_merge.at[row, f'Lat_Lon_Diff'] = best_data['total_diff']
+    df_for_surge_merge.to_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection_with_tool.xlsx', index=False)
+    #df_for_surge_merge.to_csv(path, index=False)
     return df_for_surge_merge
 
+def get_inspected_surge_data(include_surge=True):
+    path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check.xlsx"
+    if os.path.exists(path):
+        print(f"Surge data file already exists at {path}.")
+        df_existing = pd.read_excel(path)
+        valid_manual_checks = ['yes']
+        if include_surge:
+            valid_manual_checks.append('surge only')
+        df_existing = df_existing[df_existing['Manual check'].isin(valid_manual_checks)]
+        #for surge only set Storm_Tide_m to Surge_m if Storm_Tide_m
+        for row_index, row in df_existing.iterrows():
+            if row['Manual check'] == 'surge only':
+                if not pd.isna(row['Surge_m']):
+                    df_existing.at[row_index, 'Storm_Tide_m'] = row['Surge_m']
+        columns_to_keep = ['Unique_ID', 'Storm_Tide_m']
+        df_existing = df_existing[columns_to_keep]
+
+        return df_existing
+    else:
+        raise FileNotFoundError(f"Inspected surge data file not found at {path}. Please run generate_surge_data() first.")
 
 #df = pd.merge(df, surge_data, how='left', left_on=['name
+get_inspected_surge_data()

@@ -1,0 +1,10 @@
+Errors are incorporated into the model by assuming a measurement is gaussian and then the error on the measurement is the sigma.
+Wind:
+
+The wind errors can be directly used from: chrome-extension://oemmndcbldboiebfnladdacbdfmadadm/https://www.ncei.noaa.gov/sites/default/files/2025-04/IBTrACS_version4r01_Technical_Details.pdf
+Otherwise one could maybe use this instead: chrome-extension://oemmndcbldboiebfnladdacbdfmadadm/https://www.nhc.noaa.gov/pdf/landsea-franklin-mwr2013.pdf
+
+
+Pressure:
+I think pressure errors should be timedependent.
+

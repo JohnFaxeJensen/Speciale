@@ -1,1 +1,13 @@
-What to do with storm surge at positions far away?
+What to do with storm surge at positions far away? because is the total damage estimated for the entire hurricane.e.g irene move a lot along the coeast causing flooding
+
+
+What surge data point should i pick? the one closest to landfall, is there a maximum distance? there is different datums.
+
+
+Include data som en normalfordeling fx med surge for at have usikkerhed. hvor hvor tide kan være sigma, fordi S propto N(S_obs, sigma_tide)
+
+
+Måske skal sigma afhænge af tid.
+
+Would you expect things change if you swap surge for tide?
+

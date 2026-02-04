@@ -9,7 +9,7 @@ from Data_preprocessing.generate_tide import generate_tide_data
 from Data_preprocessing.generate_region_temps import generate_temp_data
 from Data_preprocessing.generate_ibtracks_data import generate_travel_speed_data, generate_ibtracs_data
 from Data_preprocessing.ML.generate_ml_data import estimate_mean_radius_for_all
-from Data_preprocessing.generate_surge import generate_surge_data
+from Data_preprocessing.generate_surge import generate_surge_data, get_inspected_surge_data
 
 
 
@@ -127,7 +127,7 @@ def generate_csv_data(researcher = 'Aslak'):
     #merge storm surge data 
     print('pre_surge_data merge: ',df.shape)
     # Try UTF-8 first, fall back to latin-1
-    surge_data = generate_surge_data(df)
+    surge_data = get_inspected_surge_data()
     print("Surge data shape:", surge_data.shape)
     df = pd.merge(df, surge_data, how='left', left_on=['Unique_ID'], right_on=['Unique_ID'], suffixes=('', '_surge'))
     columns_with_suffix = [col for col in df.columns if col.endswith('_surge')]

@@ -11,13 +11,41 @@ from sklearn.linear_model import LinearRegression
 import sys
 sys.path.append(r"./Speciale/Code")
 from wind_eq_comparison_final import equation_11_wind
-from ULLN import ulln_logp, ulln_random
+from ULLN import ulln_logp,  ulln_random
 from Data_preprocessing.generate_csv import generate_csv_data
 
+rng = np.random.default_rng(seed=42)
+
+def estimate_upper_bound( pops, wpcs):
+    exposure = pops * wpcs
+    max_exposure = np.max(exposure)
+    upper_bound = 10*max_exposure #set upper bound to 10 times max exposure
+    return upper_bound
 
 
+def add_wind_uncertainty(df):
+    #calculate uncertainty in wind speed measurements based on period of record
+    wind_raw = df['lf_wind'].values
+    get_uncertainty = lambda year: (
+        30 if year < 1965 else
+        20 if year < 1978 else
+        15 if year < 1984 else
+        10 if year < 2000 else
+        7
+    )
+    wind_uncertainty_list = [get_uncertainty(year) for year in df['Year'].values]
+    return wind_uncertainty_list
 
-
+def add_pressure_uncertainty(df):
+    pressure_raw = df['lf_pressure'].values
+    get_uncertainty = lambda year: (
+        10 if year < 1950 else
+        5 if year < 1978 else
+        4 if year < 2000 else
+        3.6
+    )
+    pressure_uncertainty_list = [get_uncertainty(year) for year in df['Year'].values]
+    return pressure_uncertainty_list
 
 def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_variable='basedamage'):
     """
@@ -55,8 +83,14 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
     population = df_clean['population'].values
     WPC = df_clean['WPC'].values
+    wind_uncertainties = add_wind_uncertainty(df_clean)
+    pressure_uncertainties = add_pressure_uncertainty(df_clean)
     wind_speed_raw = df_clean['lf_wind'].values
     pressure_raw = df_clean['lf_pressure'].values
+
+
+    #convert wind and pressure measurements to draws to include measurement uncertainty
+
     area =10000 #value set by Aslak in study
     tides_m = df_clean['Tide_Level_m'].values
     timestamps = df_clean['lf_ISO_TIME'].values 
@@ -74,12 +108,11 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     # load and detrend anomaly 
     temp_anomaly_global = df_clean['Anomaly_global'].values
     temp_anomaly_global = temp_anomaly_global - (np.array(years)-years[0])*0.008 #rough detrend
-
-    modelled_wind_raw = equation_11_wind(pressure_raw, df_clean['lf_lat'].values, travel_speed)
-    # Orthogonalize residuals: wind_speed ~ modelled_wind, use residual of this regression
-    lr = LinearRegression().fit(modelled_wind_raw.reshape(-1, 1), wind_speed_raw)
-    wind_pred_raw = lr.predict(modelled_wind_raw.reshape(-1, 1))
-    residual_wind_raw = wind_speed_raw - wind_pred_raw
+    # modelled_wind_raw = equation_11_wind(pressure_raw, df_clean['lf_lat'].values, travel_speed)
+    # # Orthogonalize residuals: wind_speed ~ modelled_wind, use residual of this regression
+    # lr = LinearRegression().fit(modelled_wind_raw.reshape(-1, 1), wind_speed_raw)
+    # wind_pred_raw = lr.predict(modelled_wind_raw.reshape(-1, 1))
+    # residual_wind_raw = wind_speed_raw - wind_pred_raw
     temp_hadisst_gc = df_clean['mean_temp_hadisst_gc'].values
     temp_hadisst_mdr = df_clean['mean_temp_hadisst_mdr'].values
     temp_icoads_gc = df_clean['mean_temp_icoads_gc'].values
@@ -108,8 +141,8 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     pressure_relative = pressure_raw / category_1_pressure_baseline
     travel_speed = travel_speed / 10 #normalize to 10 m/s
     travel_speed_before = travel_speed_before / 10 #normalize to 10 m/s
-    modelled_wind_relative = modelled_wind_raw / category_1_wind_baseline
-    residual_wind_relative = residual_wind_raw / category_1_wind_baseline
+    # modelled_wind_relative = modelled_wind_raw / category_1_wind_baseline
+    # residual_wind_relative = residual_wind_raw / category_1_wind_baseline
 
     # Standardize pressure and wind
     scaler = StandardScaler()
@@ -153,6 +186,11 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         
         # Build mu dynamically based on model_spec
         mu = alpha
+
+        # wind_true = pm.Normal("wind_true", mu=wind_speed_raw,
+        #                        sigma=wind_uncertainties, shape=len(wind_speed_raw))
+        # pressure_true = pm.Normal("pressure_true", mu=pressure_raw,
+        #                          sigma=pressure_uncertainties, shape=len(pressure_raw))
         
         if model_spec.get("economic", False):
             economic_coef = pm.Normal("economic_coef", sigma=5)
@@ -198,14 +236,14 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             wind_coef = pm.Normal("wind_coef", sigma=5)
             mu = mu + wind_coef*wind_speed_relative
 
-        if model_spec.get("modelled_wind", False):
-            modelled_wind_coef = pm.Normal("modelled_wind_coef", sigma=5)
-            mu = mu + modelled_wind_coef*modelled_wind_relative
-            wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
-            mu = mu + wind_coef_residual*residual_wind_relative
-        if model_spec.get("residual_wind", False):
-            wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
-            mu = mu + wind_coef_residual*residual_wind_relative
+        # if model_spec.get("modelled_wind", False):
+        #     modelled_wind_coef = pm.Normal("modelled_wind_coef", sigma=5)
+        #     mu = mu + modelled_wind_coef*modelled_wind_relative
+        #     wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
+        #     mu = mu + wind_coef_residual*residual_wind_relative
+        # if model_spec.get("residual_wind", False):
+        #     wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
+        #     mu = mu + wind_coef_residual*residual_wind_relative
         if model_spec.get("wind_power_law", False):
             wind_power_law_coef = pm.Normal("wind_power_law_coef", mu=9, sigma=4)
             wind_power_law = np.log(wind_speed_relative)*(wind_power_law_coef)
@@ -321,12 +359,16 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
         if use_ulln:
             upper_min = np.max(np.exp(observed)) 
-            upper_min_prior = pm.Pareto("upper", alpha=5.0, m=upper_min)
+            print("ULLN upper min:", upper_min)
+            upper_max = 10*estimate_upper_bound( population, WPC) # the posterior is very dependent on prior and not well constrained by data
+            print("ULLN upper max:", upper_max)
+            upper = pm.Beta("upper", alpha=1, beta=1)* (upper_max - upper_min) + upper_min
             obs = pm.CustomDist("obs",
-                                 mu, sigma, upper_min_prior,
+                                 mu, sigma, upper,
                                  logp=ulln_logp,
                                  random=ulln_random,
-                                 observed=np.exp(observed))
+                                 observed=np.exp(observed)) #maybe comment on arimethic error here
+
         else:  
             obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
         
@@ -573,17 +615,30 @@ if __name__ == "__main__":
     print(df_clean.shape)
     df_clean = df_clean[df_clean['ND'] > 0]
     print(df_clean.shape)
+    #try data past 1960 only
+    #df_clean = df_clean[df_clean['Year'] >= 1960]
 
 
 
     model_specs = [
-        {"economic": True, "pressure": True, "storm_tide": True},
-        {"economic": True, "pressure": True},
-   
+        {"economic": True, "pressure": True,'trend': True},
+        {"economic": True, "wind": True, 'trend': True},
+        {"economic": True, "storm_tide": True,'trend': True},
+        {"economic": True, "wind": True, "storm_tide": True,'trend': True, 'pressure': True},
+        {"economic": True, "pressure": True,'trend': True, 'storm_tide': True},
+        {"economic": True, "wind": True,'trend': True, 'storm_tide': True},
+        {"economic": True, "wind": True,'trend': True, 'pressure': True},
+
+        # {"economic": True, "pressure": True},
+        # {"economic": True, "storm_tide": True},
+        # {"economic": True, "storm_tide": True, 'trend': True},
+        # {"economic": True, "wind": True, "storm_tide": True},
+        # {"economic": True, "wind": True, "storm_tide": True, 'trend': True},
+        # {"economic": True, "modelled_wind": True, "storm_tide": True, 'trend': True},
   
 
     ]
-    #hurricane_physical_model(df_clean, model_spec={"economic": True,  "pressure": True, "storm_tide": True},use_ulln=False, observed_variable='ATD')
+    #hurricane_physical_model(df_clean, model_spec={"economic": True,  "wind": True, "storm_tide": True},use_ulln=True, observed_variable='basedamage')
     comparison_df, traces = compare_models(df_clean, model_specs, use_ulln=True, observed_variable='basedamage')
         # Compare both methods
 

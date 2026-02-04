@@ -1,0 +1,10 @@
+monday: finished restructuring data, r34,r50,r64 doesnt add explanatory power to the model. I expect this is because the best feature of the ml-model is pressure, which means the values predicted will be naturally correlated with pressure.
+
+Tuesday: looking at vulnerability.
+
+
+Questions coming up. what does not including a trend in term say about the economic coef, why does including a trend term add colinearity?
+
+Could build a ML-model predicting surge values: https://www.nature.com/articles/s41597-024-03249-5
+
+when the hurricane hits regarding the tide could have effects on the surge tide.

@@ -1,0 +1,2 @@
+Thoughts on collecting tide data, the best we can do.
+Sometimes the stations did not have measurements we will have to incorporate error into measurements based on reference point and type of measurement.

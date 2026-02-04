@@ -21,4 +21,7 @@ Beskriv ønskemodel.
 How trustworthy is the data measurement both physical measurements and damage measurements.
 
 kan evt lave en stram prior på economic const, hvorfor er dette ikke optimalt? højst sandsynligt pga så antager vi automatisk er der ikke er nogen trends i det økonomiske data, hvilket ville være uoptimalt.
+
+
+Surge afhænger ret meget af coastal topography. This makes early measurement very unrealiable because we only have a few compared to newer data.
  
