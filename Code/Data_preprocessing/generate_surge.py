@@ -141,11 +141,6 @@ def parse_storm_date(date_str, year):
     return None, None
 
 def generate_surge_data(df):
-    path = r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data.csv'
-    if os.path.exists(path):
-        print(f"Surge data file already exists at {path}.")
-        df_existing = pd.read_csv(path)
-        return df_existing
     try:
         surge_data = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\globalpeaksurgedb.csv", encoding='utf-8')
     except UnicodeDecodeError:
@@ -183,7 +178,6 @@ def generate_surge_data(df):
     
     def append_surge_values(surge_row, lists_dict):
         """Helper function to append surge data from a row"""
-        lists_dict['surge_id'].append(surge_row['Surge ID'])
         lists_dict['datum'].append(surge_row['Datum'])
         lists_dict['surge_ms'].append(surge_row['Surge_m'])
         lists_dict['surge_ft'].append(surge_row['Surge_ft'])
@@ -193,10 +187,11 @@ def generate_surge_data(df):
         lists_dict['start_dates'].append(surge_row['Start_Date'])
         lists_dict['end_dates'].append(surge_row['End_Date'])
         lists_dict['storm_dates'].append(surge_row['Storm Dates'])
+        lists_dict['Lat_db'].append(surge_row['Lat'])
+        lists_dict['Lon_db'].append(surge_row['Lon'])
 
     #try different merge approach to find closest lat/lon
     result_lists = {
-        'surge_id': [],
         'datum': [],
         'surge_ms': [],
         'surge_ft': [],
@@ -205,7 +200,9 @@ def generate_surge_data(df):
         'lat_lon_diffs': [],
         'start_dates': [],
         'end_dates': [],
-        'storm_dates': []
+        'storm_dates': [],
+        'Lat_db': [],
+        'Lon_db': []
     }
     
     sketchy_matches = []  # Track matches with distance > 2.0
@@ -304,7 +301,6 @@ def generate_surge_data(df):
             append_surge_values(closest_surge, result_lists)
         else:
             append_none_values(result_lists)
-    df_for_surge_merge['Surge_ID'] = result_lists['surge_id']
     df_for_surge_merge['Datum'] = result_lists['datum']
     df_for_surge_merge['Surge_m'] = result_lists['surge_ms']
     df_for_surge_merge['Surge_ft'] = result_lists['surge_ft']
@@ -314,6 +310,8 @@ def generate_surge_data(df):
     df_for_surge_merge['Start_Date'] = result_lists['start_dates']
     df_for_surge_merge['End_Date'] = result_lists['end_dates']
     df_for_surge_merge['Storm_Dates'] = result_lists['storm_dates']
+    df_for_surge_merge['Lat_db'] = result_lists['Lat_db']
+    df_for_surge_merge['Lon_db'] = result_lists['Lon_db']
     #save as excel to inspect missing values
 
     #Put all relevant info into Storm_Tide_m
@@ -322,10 +320,7 @@ def generate_surge_data(df):
             #try Storm_Tide_ft
             if not pd.isna(row['Storm_Tide_ft']):
                 df_for_surge_merge.at[row_index, 'Storm_Tide_m'] = float(row['Storm_Tide_ft']) * 0.3048
-            #try Surge_m
-            elif not pd.isna(row['Surge_m']):
-                #add artificial tide height of 0.4m to surge to estimate storm tide
-                df_for_surge_merge.at[row_index, 'Storm_Tide_m'] = float(row['Surge_m']) + 0.4
+
 
     
     # Export sketchy matches
@@ -380,8 +375,9 @@ def generate_surge_data(df):
             df_for_surge_merge.at[row, f'Storm_Tide_ft'] = best_data['Storm_Tide_ft']
             df_for_surge_merge.at[row, f'Datum'] = best_data['Datum']
             df_for_surge_merge.at[row, f'Lat_Lon_Diff'] = best_data['total_diff']
+            df_for_surge_merge.at[row, f'Lat_db'] = best_data['Lat']
+            df_for_surge_merge.at[row, f'Lon_db'] = best_data['Lon']
     df_for_surge_merge.to_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection_with_tool.xlsx', index=False)
-    #df_for_surge_merge.to_csv(path, index=False)
     return df_for_surge_merge
 
 def get_inspected_surge_data(include_surge=True):

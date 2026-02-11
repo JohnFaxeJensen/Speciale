@@ -42,67 +42,67 @@ def proccess_surge_data(name: str, year: int) -> pd.DataFrame:
     return df
 
 #get relevant hurricane names and years from another dataframe
-hurricane_df = pd.read_excel(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data.xls", sheet_name = 'ATD of ICAT')
-hurricane_df['lf_ISO_TIME'] = pd.to_datetime(hurricane_df['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
-hurricane_df['Year'] = hurricane_df['lf_ISO_TIME'].dt.year
-#only get unique storm names and not storms that start with 'Storm'
-hurricane_df['name'] = hurricane_df['name'].str.strip()
-hurricane_df = hurricane_df[~hurricane_df['name'].str.startswith('Storm', na=False)]
-#create tuple list of (name, year)
-# hurricane_tuples = list(hurricane_df[['name', 'Year']].drop_duplicates().itertuples(index=False, name=None))
-# print(hurricane_tuples)
+# hurricane_df = pd.read_excel(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data.xls", sheet_name = 'ATD of ICAT')
+# hurricane_df['lf_ISO_TIME'] = pd.to_datetime(hurricane_df['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
+# hurricane_df['Year'] = hurricane_df['lf_ISO_TIME'].dt.year
+# #only get unique storm names and not storms that start with 'Storm'
+# hurricane_df['name'] = hurricane_df['name'].str.strip()
+# hurricane_df = hurricane_df[~hurricane_df['name'].str.startswith('Storm', na=False)]
+# #create tuple list of (name, year)
+# # hurricane_tuples = list(hurricane_df[['name', 'Year']].drop_duplicates().itertuples(index=False, name=None))
+# # print(hurricane_tuples)
 
-# result_frame = pd.DataFrame()
-# for name, year in hurricane_tuples:
-#     print(f"Processing surge data for {name} {year}...")
-#     surge_data_df = proccess_surge_data(name, year)
-#     result_frame = pd.concat([result_frame, surge_data_df], ignore_index=True)
-# result_frame.to_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\raw_tool_data\all_surge_data.csv", index=False)
+# # result_frame = pd.DataFrame()
+# # for name, year in hurricane_tuples:
+# #     print(f"Processing surge data for {name} {year}...")
+# #     surge_data_df = proccess_surge_data(name, year)
+# #     result_frame = pd.concat([result_frame, surge_data_df], ignore_index=True)
+# # result_frame.to_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\raw_tool_data\all_surge_data.csv", index=False)
 
-#try to merge the new csv with the excel data
-surge_data_df = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\raw_tool_data\all_surge_data.csv")
-preproccessed_hurricane_df = pd.read_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection.xlsx')
-for row, index in preproccessed_hurricane_df.iterrows():
-    name = index['name'].strip()
-    year = index['Year']
-    matching_surge = surge_data_df[(surge_data_df['Storm Name'].str.strip() == name) & (surge_data_df['Year'] == year)]
-    if not matching_surge.empty:
-        #find the highest value within 2 degrees lat/lon in total
-        lat = index['lf_lat']
-        lon = index['lf_lon']
-        matching_surge['lat_diff'] = (matching_surge['Lat'] - lat).abs()
-        matching_surge['lon_diff'] = (matching_surge['Lon'] - lon).abs()
-        matching_surge['total_diff'] = matching_surge['lat_diff'] + matching_surge['lon_diff']
-        #filter to only those within 2 degrees total
-        matching_surge = matching_surge[matching_surge['total_diff'] <= 2]
-        #pick the highest one of surge_m and storm_tide_m
+# #try to merge the new csv with the excel data
+# surge_data_df = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\raw_tool_data\all_surge_data.csv")
+# preproccessed_hurricane_df = pd.read_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection.xlsx')
+# for row, index in preproccessed_hurricane_df.iterrows():
+#     name = index['name'].strip()
+#     year = index['Year']
+#     matching_surge = surge_data_df[(surge_data_df['Storm Name'].str.strip() == name) & (surge_data_df['Year'] == year)]
+#     if not matching_surge.empty:
+#         #find the highest value within 2 degrees lat/lon in total
+#         lat = index['lf_lat']
+#         lon = index['lf_lon']
+#         matching_surge['lat_diff'] = (matching_surge['Lat'] - lat).abs()
+#         matching_surge['lon_diff'] = (matching_surge['Lon'] - lon).abs()
+#         matching_surge['total_diff'] = matching_surge['lat_diff'] + matching_surge['lon_diff']
+#         #filter to only those within 2 degrees total
+#         matching_surge = matching_surge[matching_surge['total_diff'] <= 2]
+#         #pick the highest one of surge_m and storm_tide_m
 
-    if not matching_surge.empty:
-        # Get indices of max values, handling NaN
-        surge_idx = matching_surge['Surge_m'].idxmax()
-        tide_idx = matching_surge['Storm_Tide_m'].idxmax()
+#     if not matching_surge.empty:
+#         # Get indices of max values, handling NaN
+#         surge_idx = matching_surge['Surge_m'].idxmax()
+#         tide_idx = matching_surge['Storm_Tide_m'].idxmax()
         
-        # Check if we got valid indices (not NaN)
-        has_surge = pd.notna(surge_idx)
-        has_tide = pd.notna(tide_idx)
+#         # Check if we got valid indices (not NaN)
+#         has_surge = pd.notna(surge_idx)
+#         has_tide = pd.notna(tide_idx)
         
-        if has_surge and has_tide:
-            best_surge = matching_surge.loc[surge_idx]
-            best_tide = matching_surge.loc[tide_idx]
-            best_data = best_tide if best_tide['Storm_Tide_m'] > best_surge['Surge_m'] else best_surge
-        elif has_surge:
-            best_data = matching_surge.loc[surge_idx]
-        elif has_tide:
-            best_data = matching_surge.loc[tide_idx]
-        else:
-            continue  # Skip if neither has valid data
+#         if has_surge and has_tide:
+#             best_surge = matching_surge.loc[surge_idx]
+#             best_tide = matching_surge.loc[tide_idx]
+#             best_data = best_tide if best_tide['Storm_Tide_m'] > best_surge['Surge_m'] else best_surge
+#         elif has_surge:
+#             best_data = matching_surge.loc[surge_idx]
+#         elif has_tide:
+#             best_data = matching_surge.loc[tide_idx]
+#         else:
+#             continue  # Skip if neither has valid data
         
-        # Add values in new columns to preproccessed_hurricane_df
-        prefix = 't_max'
-        preproccessed_hurricane_df.at[row, f'{prefix}_Surge_m'] = best_data['Surge_m']
-        preproccessed_hurricane_df.at[row, f'{prefix}_Surge_ft'] = best_data['Surge_ft']
-        preproccessed_hurricane_df.at[row, f'{prefix}_Storm_Tide_m'] = best_data['Storm_Tide_m']
-        preproccessed_hurricane_df.at[row, f'{prefix}_Storm_Tide_ft'] = best_data['Storm_Tide_ft']
-        preproccessed_hurricane_df.at[row, f'{prefix}_Datum'] = best_data['Datum']
-        preproccessed_hurricane_df.at[row, f'{prefix}_total_diff'] = best_data['total_diff']
-preproccessed_hurricane_df.to_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection_updated.xlsx', index=False)
+#         # Add values in new columns to preproccessed_hurricane_df
+#         prefix = 't_max'
+#         preproccessed_hurricane_df.at[row, f'{prefix}_Surge_m'] = best_data['Surge_m']
+#         preproccessed_hurricane_df.at[row, f'{prefix}_Surge_ft'] = best_data['Surge_ft']
+#         preproccessed_hurricane_df.at[row, f'{prefix}_Storm_Tide_m'] = best_data['Storm_Tide_m']
+#         preproccessed_hurricane_df.at[row, f'{prefix}_Storm_Tide_ft'] = best_data['Storm_Tide_ft']
+#         preproccessed_hurricane_df.at[row, f'{prefix}_Datum'] = best_data['Datum']
+#         preproccessed_hurricane_df.at[row, f'{prefix}_total_diff'] = best_data['total_diff']
+# preproccessed_hurricane_df.to_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection_updated.xlsx', index=False)

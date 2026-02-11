@@ -1,0 +1,2 @@
+Model setup:
+also investigate what values the prior dist allows with arviz.

@@ -24,8 +24,7 @@ def estimate_upper_bound( pops, wpcs):
 
 
 def add_wind_uncertainty(df):
-    #calculate uncertainty in wind speed measurements based on period of record
-    wind_raw = df['lf_wind'].values
+    #calculate uncertainty in wind speed measurements based on period of record uncetainty here: chrome-extension://oemmndcbldboiebfnladdacbdfmadadm/https://www.ncei.noaa.gov/sites/default/files/2025-04/IBTrACS_version4r01_Technical_Details.pdf
     get_uncertainty = lambda year: (
         30 if year < 1965 else
         20 if year < 1978 else
@@ -36,16 +35,35 @@ def add_wind_uncertainty(df):
     wind_uncertainty_list = [get_uncertainty(year) for year in df['Year'].values]
     return wind_uncertainty_list
 
-def add_pressure_uncertainty(df):
-    pressure_raw = df['lf_pressure'].values
-    get_uncertainty = lambda year: (
-        10 if year < 1950 else
-        5 if year < 1978 else
-        4 if year < 2000 else
-        3.6
-    )
-    pressure_uncertainty_list = [get_uncertainty(year) for year in df['Year'].values]
-    return pressure_uncertainty_list
+def get_pressure_uncertainty(wind_raw, wind_uncertainties): #uncertainty here: chrome-extension://oemmndcbldboiebfnladdacbdfmadadm/https://www.nhc.noaa.gov/pdf/landsea-franklin-mwr2013.pdf
+    #maybe add some kind of time dependency here as well
+    #try to classify based on saffir-simpson categories
+    #scale here: https://www.nhc.noaa.gov/aboutsshws.php
+
+    pressure_uncertainty_list = []
+    pressure_min_list = []
+    pressure_max_list = []
+    for wind, uncertainty in zip(wind_raw, wind_uncertainties):
+        #estimate worst case uncertainty based on wind speed category
+        wind_worst = wind + uncertainty
+        if wind_worst < 64:  # Tropical Storm
+            pressure_uncertainty = 2.8 # range (2-5)
+            min_range = 2
+            max_range = 5
+
+        elif wind_worst <= 95:  # Category 1 + 2
+            pressure_uncertainty = 3.5 # range(1.5–8)
+            min_range = 1.5
+            max_range = 8
+        else:  # stronger storms
+            pressure_uncertainty = 3.6 #range(1.5–10)
+            min_range = 1.5
+            max_range = 10
+        pressure_uncertainty_list.append((pressure_uncertainty))
+        pressure_min_list.append(min_range)
+        pressure_max_list.append(max_range)
+
+    return np.array(pressure_uncertainty_list), np.array(pressure_min_list), np.array(pressure_max_list)
 
 def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_variable='basedamage'):
     """
@@ -84,9 +102,9 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     population = df_clean['population'].values
     WPC = df_clean['WPC'].values
     wind_uncertainties = add_wind_uncertainty(df_clean)
-    pressure_uncertainties = add_pressure_uncertainty(df_clean)
     wind_speed_raw = df_clean['lf_wind'].values
     pressure_raw = df_clean['lf_pressure'].values
+    pressure_uncertainties, pressure_min_list, pressure_max_list = get_pressure_uncertainty(wind_speed_raw, wind_uncertainties) # comes as list of tuples (uncertainty, min_range, max_range) to allow for different distributions in pressure uncertainty if desired in future
 
 
     #convert wind and pressure measurements to draws to include measurement uncertainty
@@ -128,6 +146,27 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
     # Create model name based on spec
     spec_parts = [k for k, v in model_spec.items() if v]
+    model_name_rename_dict = {
+        "economic": "ec",
+        "pressure": "p",
+        "wind": "w",
+        "storm_tide": "st",
+        "travel_speed": "ts",
+        "trend": "tr",
+        "pca": "pca",
+        "inverse_barometer": "ib",
+        "modelled_wind": "mw",
+        "residual_wind": "rw",
+        "wind_power_law": "wpl",
+        "pressure_threshold": "pth",
+        "storm_tide_threshold": "stth",
+        "gc_hadisst": "gcH",
+        "mdr_hadisst": "mdrH",
+        "gc_icoads": "gcI",
+        "mdr_icoads": "mdrI",
+        "seasonal": "sea",
+    }
+    spec_parts = [model_name_rename_dict.get(part, part) for part in spec_parts]
     model_name = "_".join(spec_parts)
     filename = f"{observed_variable}_hurricane_model_{model_name}"
     if use_ulln:
@@ -181,39 +220,49 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
 
         # Priors for the linear combination
-        alpha = pm.Normal("alpha", mu=0, sigma=15)
-        sigma = pm.HalfNormal("sigma", sigma=5)
+        alpha = pm.Normal("alpha", mu=0, sigma=50)
+        sigma = pm.HalfNormal("sigma", sigma=20)
         
         # Build mu dynamically based on model_spec
         mu = alpha
 
-        # wind_true = pm.Normal("wind_true", mu=wind_speed_raw,
-        #                        sigma=wind_uncertainties, shape=len(wind_speed_raw))
-        # pressure_true = pm.Normal("pressure_true", mu=pressure_raw,
-        #                          sigma=pressure_uncertainties, shape=len(pressure_raw))
+        wind_true = pm.Normal("wind_true", mu=wind_speed_raw,
+                               sigma=wind_uncertainties, shape=len(wind_speed_raw))
+        #infer sigma from pressure uncertainty, but allow for some flexibility with a scaling factor
+        pressure_sigma = pm.TruncatedNormal("pressure_sigma", 
+                                            mu=pressure_uncertainties, 
+                                            sigma=(pressure_max_list-pressure_min_list)/4, lower=pressure_min_list
+                                            , upper=pressure_max_list, shape=len(pressure_uncertainties))  
         
+        pressure_true = pm.Normal("pressure_true", mu=pressure_raw,
+                                 sigma=pressure_sigma, shape=len(pressure_raw)) # add sigma that is normal dist here
+
+        wind_speed_relative = wind_true / category_1_wind_baseline
+        delta_P = (1013.25-pressure_true)* 100  #convert to Pa
+        delta_P_baseline = (1013.25 - category_1_pressure_baseline)*100
+        delta_P_relative = delta_P / delta_P_baseline  #Pa
         if model_spec.get("economic", False):
-            economic_coef = pm.Normal("economic_coef", sigma=5)
+            economic_coef = pm.Normal("economic_coef", sigma=10)
             mu = mu + economic_coef*np.log(population*WPC/area)
 
         if model_spec.get("economic_exp", False):
-            economic_coef_exp = pm.Normal("economic_coef_exp", sigma=5)
+            economic_coef_exp = pm.Normal("economic_coef_exp", sigma=10)
             mu = mu + economic_coef_exp*(population*WPC/area)
 
 
         if model_spec.get("economic_split", False):
-            economic_coef_pop = pm.Normal("economic_coef_pop", sigma=5)
-            economic_coef_wpc = pm.Normal("economic_coef_wpc", sigma=5)
+            economic_coef_pop = pm.Normal("economic_coef_pop", sigma=10)
+            economic_coef_wpc = pm.Normal("economic_coef_wpc", sigma=10)
             mu = mu + economic_coef_pop*np.log(population/area) + economic_coef_wpc*np.log(WPC)
         if model_spec.get("pressure", False):
             # Linear in log-space: log(damage) ~ coef * pressure
-            pressure_coef = pm.Normal("pressure_coef", sigma=5)
+            pressure_coef = pm.Normal("pressure_coef", sigma=10)
             mu = mu + pressure_coef*delta_P_relative
         
         if model_spec.get("pressure_threshold", False):
             # Threshold response in log-space: only log(pressure) above threshold
             pressure_thresh = pm.Normal("pressure_threshold_val", mu=-1.0, sigma=0.5)
-            pressure_thresh_coef = pm.Normal("pressure_thresh_coef", sigma=5)
+            pressure_thresh_coef = pm.Normal("pressure_thresh_coef", sigma=10)
             pressure_log = pm.math.log(delta_P_relative + 0.1)
             pressure_excess = pm.math.maximum(pressure_log - pressure_thresh, 0)
             mu = mu + pressure_thresh_coef * pressure_excess
@@ -222,18 +271,18 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             # mu = alpha + coef * max(delta_P_relative - threshold, eps)^power
             pressure_threshold = pm.Normal("pressure_threshold", mu=1.0, sigma=0.3)
             pressure_power = pm.Normal("pressure_power", mu=2.0, sigma=0.5)
-            pressure_thresh_coef = pm.Normal("pressure_thresh_coef", sigma=5)
+            pressure_thresh_coef = pm.Normal("pressure_thresh_coef", sigma=10)
             pressure_excess = pm.math.maximum(delta_P_relative - pressure_threshold, 1e-6)
             power_term = pressure_excess**pressure_power
             mu = mu + pressure_thresh_coef * power_term
 
         
         if model_spec.get("tides", False):
-            tides_coef = pm.Normal("tides_coef", sigma=5)
+            tides_coef = pm.Normal("tides_coef", sigma=10)
             mu = mu + tides_m*tides_coef
         
         if model_spec.get("wind", False):
-            wind_coef = pm.Normal("wind_coef", sigma=5)
+            wind_coef = pm.Normal("wind_coef", sigma=10)
             mu = mu + wind_coef*wind_speed_relative
 
         # if model_spec.get("modelled_wind", False):
@@ -250,77 +299,77 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             mu = mu + wind_power_law
         
         if model_spec.get("travel_speed", False):
-            travel_speed_coef = pm.Normal("travel_speed_coef", sigma=5)
+            travel_speed_coef = pm.Normal("travel_speed_coef", sigma=10)
             mu = mu + travel_speed_coef*travel_speed
 
         if model_spec.get("trend", False):
             trend_coef = pm.Normal("trend_coef", mu=0, sigma=0.1)
             mu = mu + trend_coef*np.array(years)
         if model_spec.get("trend_residual", False):
-            trend_residual_coef = pm.Normal("trend_residual_coef", mu=0, sigma=0.1)
+            trend_residual_coef = pm.Normal("trend_residual_coef", mu=0, sigma=5)
             mu = mu + trend_residual_coef*years_residual
         if model_spec.get("pca", False):
-            pc1_coef = pm.Normal("pc1_coef", sigma=5)
-            pc2_coef = pm.Normal("pc2_coef", sigma=5)
+            pc1_coef = pm.Normal("pc1_coef", sigma=10)
+            pc2_coef = pm.Normal("pc2_coef", sigma=10)
             mu = mu + pc1_coef*pc1 + pc2_coef*pc2
 
         if model_spec.get("inverse_barometer", False):
-            ib_coef = pm.Normal("ib_coef", sigma=5)
+            ib_coef = pm.Normal("ib_coef", sigma=10)
             mu = mu + ib_coef*ib_vals_relative  # Example term for inverse barometer effect
         if model_spec.get("economic_raw", False):
             mu = mu + np.log(population*WPC/area)
 
         if model_spec.get("water_level", False):
-            water_level_coef = pm.Normal("water_level_coef", sigma=5)
+            water_level_coef = pm.Normal("water_level_coef", sigma=10)
             water_level = tides_m + ib_vals_raw
             mu = mu + water_level_coef*water_level
         if model_spec.get("temp_anomaly_global", False):
-            temp_anomaly_global_coef = pm.Normal("temp_anomaly_global_coef", sigma=5)
+            temp_anomaly_global_coef = pm.Normal("temp_anomaly_global_coef", sigma=10)
             mu = mu + temp_anomaly_global_coef*temp_anomaly_global
         if model_spec.get("seasonal", False):
-            season_sin_coef = pm.Normal("season_sin_coef", sigma=5)
-            season_cos_coef = pm.Normal("season_cos_coef", sigma=5)
+            season_sin_coef = pm.Normal("season_sin_coef", sigma=10)
+            season_cos_coef = pm.Normal("season_cos_coef", sigma=10)
             mu = mu + season_sin_coef * season_sin
             mu = mu + season_cos_coef * season_cos 
         if model_spec.get("pressure_trend_interaction", False):
-            pressure_trend_interaction_coef = pm.HalfNormal("pressure_trend_interaction_coef", sigma=5)
+            pressure_trend_interaction_coef = pm.HalfNormal("pressure_trend_interaction_coef", sigma=10)
             mu = mu + pressure_trend_interaction_coef * delta_P_relative * np.array(years)
         if model_spec.get("gc_hadisst", False):
-            temp_coef = pm.Normal("coef_gc_hadisst", sigma=5)
+            temp_coef = pm.Normal("coef_gc_hadisst", sigma=10)
             mu = mu + temp_coef * temp_hadisst_gc
         if model_spec.get("mdr_hadisst", False):
-            temp_coef_mdr = pm.Normal("coef_mdr_hadisst", sigma=5)
+            temp_coef_mdr = pm.Normal("coef_mdr_hadisst", sigma=10)
             mu = mu + temp_coef_mdr * temp_hadisst_mdr
         if model_spec.get("gc_icoads", False):
-            temp_coef = pm.Normal("coef_gc_icoads", sigma=5)
+            temp_coef = pm.Normal("coef_gc_icoads", sigma=10)
             mu = mu + temp_coef * temp_icoads_gc
         if model_spec.get("mdr_icoads", False):
-            temp_coef_mdr = pm.Normal("coef_mdr_icoads", sigma=5)
+            temp_coef_mdr = pm.Normal("coef_mdr_icoads", sigma=10)
             mu = mu + temp_coef_mdr * temp_icoads_mdr
         if model_spec.get("sea_level_rise", False):
             slope_sea_level = 0.0025  # meters per year
             sea_level_rise = slope_sea_level * np.array(years)
-            sea_level_coef = pm.Normal("sea_level_coef", sigma=5)
+            sea_level_coef = pm.Normal("sea_level_coef", sigma=10)
             mu = mu + sea_level_coef * sea_level_rise
         if model_spec.get("ibtracks_speed", False):
-            ibtracks_speed_coef = pm.Normal("ibtracks_speed_coef", sigma=5)
+            ibtracks_speed_coef = pm.Normal("ibtracks_speed_coef", sigma=10)
             mu = mu + ibtracks_speed_coef * (ibtracks_speed / 10)  # normalize to 10 m/s
         
         if model_spec.get("wind_vulnerability", False):
             v_threshold = pm.Normal("v_threshold", mu=50, sigma=10)
             v_half = pm.Normal("v_half", mu=120, sigma=15)
-            v_coef = pm.Normal("v_coef", sigma=5)
+            v_coef = pm.Normal("v_coef", sigma=10)
             v_n = pm.math.maximum(wind_speed_raw-v_threshold,0)/(v_half-v_threshold)
             vulnerability = v_n**3/(1+v_n**3)
             mu = mu + v_coef*np.log(area*vulnerability + 1e-6)  # add small constant to avoid log(0)
         if model_spec.get('r34_mean', False):
-            r34_coef = pm.Normal("r34_coef", sigma=5)
+            r34_coef = pm.Normal("r34_coef", sigma=10)
             mu = mu + r34_coef * r34_mean
         if model_spec.get('r50_mean', False):
-            r50_coef = pm.Normal("r50_coef", sigma=5)
+            r50_coef = pm.Normal("r50_coef", sigma=10)
             mu = mu + r50_coef * r50_mean
         if model_spec.get('r64_mean', False):
-            r64_coef = pm.Normal("r64_coef", sigma=5)
+            r64_coef = pm.Normal("r64_coef", sigma=10)
             mu = mu + r64_coef * r64_mean
         if model_spec.get("vulnerability", False):
             # Calculate damage normalized by exposed value in each state
@@ -340,17 +389,17 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             state_vulnerability = np.array([state_damage_exposure.get(s, 1.0) for s in states])
             state_vulnerability = (state_vulnerability - state_vulnerability.mean()) / state_vulnerability.std()
             
-            state_vuln_coef = pm.Normal("state_vuln_coef", sigma=5)
+            state_vuln_coef = pm.Normal("state_vuln_coef", sigma=10)
             mu = mu + state_vuln_coef * state_vulnerability
         if model_spec.get("risk_score", False):
-            risk_score_coef = pm.Normal("risk_score_coef", sigma=5)
+            risk_score_coef = pm.Normal("risk_score_coef", sigma=10)
             mu = mu + risk_score_coef * risk_scores
         if model_spec.get("storm_tide", False):
-            storm_tide_coef = pm.HalfNormal("storm_tide_coef", sigma=5)
+            storm_tide_coef = pm.HalfNormal("storm_tide_coef", sigma=10)
             mu = mu + storm_tide_coef * storm_tides_m
         if model_spec.get("storm_tide_threshold", False):
             storm_tide_thresh = pm.Normal("storm_tide_thresh", mu=0.5, sigma=0.2)
-            storm_tide_thresh_coef = pm.HalfNormal("storm_tide_thresh_coef", sigma=5)
+            storm_tide_thresh_coef = pm.HalfNormal("storm_tide_thresh_coef", sigma=10)
             storm_tide_excess = pm.math.maximum(storm_tides_m - storm_tide_thresh, 0)
             mu = mu + storm_tide_thresh_coef * storm_tide_excess
 
@@ -360,9 +409,12 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         if use_ulln:
             upper_min = np.max(np.exp(observed)) 
             print("ULLN upper min:", upper_min)
-            upper_max = 10*estimate_upper_bound( population, WPC) # the posterior is very dependent on prior and not well constrained by data
+            upper_max = estimate_upper_bound( population, WPC) # the posterior is very dependent on prior and not well constrained by data
             print("ULLN upper max:", upper_max)
-            upper = pm.Beta("upper", alpha=1, beta=1)* (upper_max - upper_min) + upper_min
+            upper = pm.Beta("upper", alpha=1.5, beta=3)* (upper_max - upper_min) + upper_min
+
+            upper_deterministic = pm.Deterministic("upper_deterministic", upper)
+
             obs = pm.CustomDist("obs",
                                  mu, sigma, upper,
                                  logp=ulln_logp,
@@ -372,8 +424,15 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         else:  
             obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=observed)
         
-        trace = pm.sample(draws=2500, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True})
-        summary = az.summary(trace, hdi_prob=0.95)
+        trace = pm.sample(draws=1000, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True})
+        summary = az.summary(
+            trace,
+            hdi_prob=0.95,
+            var_names=[
+                v for v in trace.posterior.data_vars
+                if not v.startswith(("wind_true", "pressure_true", "pressure_sigma"))
+            ]
+        )
         summary.to_csv(os.path.join(model_path, f"{filename}_summary.csv"))
         print(f"\n{'='*60}")
         print(f"Model: {model_name}")
@@ -449,7 +508,7 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     if model_spec.get("wind_vulnerability", False):
         var_names += ["v_threshold", "v_half", "v_coef"]
     if use_ulln:
-        var_names.append("upper")
+        var_names += ["upper_deterministic", "upper"]
     if model_spec.get('r34_mean', False):
         var_names.append("r34_coef")
     if model_spec.get('r50_mean', False):
@@ -477,9 +536,12 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     
 
     
-    az.plot_trace(trace, var_names=var_names, figsize=(12, 12))
-    plt.savefig(os.path.join(model_path, f"{filename}_trace.png"))
-    plt.close()
+    axes = az.plot_trace(trace, var_names=var_names, figsize=(12, 12))
+    fig = np.asarray(axes).ravel()[0].get_figure()
+
+    fig.subplots_adjust(hspace=0.8, wspace=0.25)  # <- increase hspace for more vertical room
+    fig.savefig(os.path.join(model_path, f"{filename}_trace.png"), bbox_inches="tight", dpi=200)
+    plt.close(fig)
     
     az.plot_pair(trace, var_names=var_names, kind="kde", marginals=True, divergences=True)
     plt.savefig(os.path.join(model_path, f"{filename}_pair.png"))
@@ -554,7 +616,7 @@ def compare_models(df, model_specs, use_ulln=False, observed_variable='basedamag
     print("\n" + "="*80)
     print("MODEL COMPARISON RESULTS (WAIC)")
     print("="*80)
-    comparison_df = az.compare(traces)
+    comparison_df = az.compare(traces, ic="loo", method="stacking")  # Use LOO for comparison, but can also try WAIC
     print(comparison_df)
     #az.plot_compare(comparison_df)
     
@@ -606,6 +668,7 @@ def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=Fa
 
 
 if __name__ == "__main__":
+
     #Example usage
     df = generate_csv_data()
     print(df.shape)
@@ -618,7 +681,7 @@ if __name__ == "__main__":
     #try data past 1960 only
     #df_clean = df_clean[df_clean['Year'] >= 1960]
 
-
+ 
 
     model_specs = [
         {"economic": True, "pressure": True,'trend': True},
@@ -628,6 +691,8 @@ if __name__ == "__main__":
         {"economic": True, "pressure": True,'trend': True, 'storm_tide': True},
         {"economic": True, "wind": True,'trend': True, 'storm_tide': True},
         {"economic": True, "wind": True,'trend': True, 'pressure': True},
+        {"economic": True, "wind": True, 'pressure': True, 'storm_tide': True},
+        {"economic": True, "storm_tide": True, 'pressure': True},
 
         # {"economic": True, "pressure": True},
         # {"economic": True, "storm_tide": True},
@@ -638,7 +703,7 @@ if __name__ == "__main__":
   
 
     ]
-    #hurricane_physical_model(df_clean, model_spec={"economic": True,  "wind": True, "storm_tide": True},use_ulln=True, observed_variable='basedamage')
+    #hurricane_physical_model(df_clean, model_spec={"trend": True,  "pressure": True, "storm_tide": True, "economic": True},use_ulln=True, observed_variable='basedamage')
     comparison_df, traces = compare_models(df_clean, model_specs, use_ulln=True, observed_variable='basedamage')
         # Compare both methods
 

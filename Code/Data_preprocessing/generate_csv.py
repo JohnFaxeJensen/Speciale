@@ -1,4 +1,5 @@
 import os
+from arcgis import GIS
 import pandas as pd
 import numpy as np
 
@@ -126,6 +127,8 @@ def generate_csv_data(researcher = 'Aslak'):
     print('post_risk_score merge: ',df.shape)
     #merge storm surge data 
     print('pre_surge_data merge: ',df.shape)
+    surge_data = generate_surge_data(df)
+    quit()
     # Try UTF-8 first, fall back to latin-1
     surge_data = get_inspected_surge_data()
     print("Surge data shape:", surge_data.shape)
@@ -137,4 +140,12 @@ def generate_csv_data(researcher = 'Aslak'):
     df.to_csv(path, index=False)
     return df
 
-generate_csv_data()
+#generate_csv_data()
+from arcgis.gis import GIS
+gis = GIS()
+item = gis.content.get("d5354dea41b14f0689860bf4b2cf5e8a")  # Replace with your item ID
+layer = item.layers[0]
+print(layer.properties)
+
+# df = features.sdf  # spatial dataframe
+# print(df.head())
