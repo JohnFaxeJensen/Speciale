@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 
-nc_file = r"./Pyfes_data/load_tide/2n2_fes2022.nc"
+nc_file = "C:\\Users\\123ti\\Documents\\Speciale_git\\Speciale\\Pyfes_data\\load_tide\\2n2_fes2022.nc"
 ds = netCDF4.Dataset(nc_file)
 lats = ds['lat'][:]
 lons = ds['lon'][:]
@@ -58,10 +58,9 @@ bbox = bounding_box(lat_station, lon_station, delta_lat=5, delta_lon=5)
 print("Bounding box aligned to FES grid:", bbox)
 
 
-path = r"./Pyfes_data"
-os.chdir(path)
 
-cfg = pyfes.load_config("fes2022.yaml", bbox=bbox)
+os.chdir(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data")
+cfg = pyfes.load_config(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data\fes2022.yaml", bbox=bbox)
 
 
 date = np.datetime64('1997-08-23T00:00:00')
@@ -95,7 +94,7 @@ for ix, dt in enumerate(dates_pd):
         f'{tide[ix] + lp[ix] + load[ix]:>10.3f} {load[ix]:>10.3f}'
     )
 #compare with measurements
-key_west = pd.read_csv(r"Duck_measurements.csv", header=None, names=['Year', 'Month', 'Day', 'Hour', 'WaterLevel'])
+key_west = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data\Duck_measurements.csv", header=None, names=['Year', 'Month', 'Day', 'Hour', 'WaterLevel'])
 key_west['DateTime'] = pd.to_datetime(key_west[['Year', 'Month', 'Day', 'Hour']])
 #convert mm to meters
 key_west['WaterLevel'] = key_west['WaterLevel'] / 1000
