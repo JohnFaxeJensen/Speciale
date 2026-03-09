@@ -1,537 +1,176 @@
+
 import pandas as pd
 import os
 from datetime import datetime
 import re
 import requests
+import numpy as np
+import sys
+sys.path.append(r"./Speciale/Code")
 
-def parse_storm_date(date_str, year):
-    """
-    Parse various storm date formats and return start and end dates.
-    Handles formats like:
-    - "Aug 27- Sep 15"
-    - "8/17-8/26"
-    - "17-Sep"
-    - "Sep"
-    - "nan"
-    
-    Returns: tuple of (start_date, end_date) as datetime objects or (None, None)
-    """
-    if pd.isna(date_str) or str(date_str).lower() == 'nan':
-        return None, None
-    
-    date_str = str(date_str).strip()
-    
-    # Month name to number mapping
-    month_map = {
-        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-    }
-    
-    try:
-        # Pattern 1: "Aug 27- Sep 15" or "Aug 27 - Sep 15" (two month names)
-        if re.search(r'[A-Za-z]{3}.*?[A-Za-z]{3}', date_str) and '-' in date_str:
-            parts = re.split(r'\s*-\s*', date_str)
-            if len(parts) == 2:
-                start_part = parts[0].strip()
-                end_part = parts[1].strip()
-                
-                # Parse start date
-                start_match = re.match(r'([A-Za-z]{3})\s+(\d{1,2})', start_part)
-                if start_match:
-                    start_month = month_map[start_match.group(1).lower()]
-                    start_day = int(start_match.group(2))
-                    start_date = datetime(year, start_month, start_day)
-                else:
-                    return None, None
-                
-                # Parse end date
-                end_match = re.match(r'([A-Za-z]{3})\s+(\d{1,2})', end_part)
-                if end_match:
-                    end_month = month_map[end_match.group(1).lower()]
-                    end_day = int(end_match.group(2))
-                    end_date = datetime(year, end_month, end_day)
-                else:
-                    return None, None
-                
-                return start_date, end_date
-        
-        # Pattern 1b: "Aug 2-18" or "Sep 9 - 16" (single month name with two days)
-        if re.match(r'^[A-Za-z]{3}\s+\d{1,2}\s*-\s*\d{1,2}$', date_str):
-            match = re.match(r'([A-Za-z]{3})\s+(\d{1,2})\s*-\s*(\d{1,2})', date_str)
-            if match:
-                month = month_map[match.group(1).lower()]
-                start_day = int(match.group(2))
-                end_day = int(match.group(3))
-                start_date = datetime(year, month, start_day)
-                end_date = datetime(year, month, end_day)
-                return start_date, end_date
-        
-        # Pattern 1c: "Sep21-22" (month name directly followed by days)
-        if re.match(r'^[A-Za-z]{3}\d{1,2}-\d{1,2}$', date_str):
-            match = re.match(r'([A-Za-z]{3})(\d{1,2})-(\d{1,2})', date_str)
-            if match:
-                month = month_map[match.group(1).lower()]
-                start_day = int(match.group(2))
-                end_day = int(match.group(3))
-                start_date = datetime(year, month, start_day)
-                end_date = datetime(year, month, end_day)
-                return start_date, end_date
-        
-        # Pattern 1d: "30-31 Aug" (day-day month format)
-        if re.match(r'^\d{1,2}-\d{1,2}\s+[A-Za-z]{3}$', date_str):
-            match = re.match(r'(\d{1,2})-(\d{1,2})\s+([A-Za-z]{3})', date_str)
-            if match:
-                start_day = int(match.group(1))
-                end_day = int(match.group(2))
-                month = month_map[match.group(3).lower()]
-                start_date = datetime(year, month, start_day)
-                end_date = datetime(year, month, end_day)
-                return start_date, end_date
-        
-        # Pattern 2: "8/17-8/26" or "8/17 - 8/26"
-        if '/' in date_str and '-' in date_str:
-            parts = re.split(r'\s*-\s*', date_str)
-            if len(parts) == 2:
-                start_match = re.match(r'(\d{1,2})/(\d{1,2})', parts[0].strip())
-                end_match = re.match(r'(\d{1,2})/(\d{1,2})', parts[1].strip())
-                
-                if start_match and end_match:
-                    start_date = datetime(year, int(start_match.group(1)), int(start_match.group(2)))
-                    end_date = datetime(year, int(end_match.group(1)), int(end_match.group(2)))
-                    return start_date, end_date
-        
-        # Pattern 2b: "9/25/03" (full date with 2-digit year)
-        if '/' in date_str and date_str.count('/') == 2 and '-' not in date_str:
-            match = re.match(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', date_str)
-            if match:
-                month = int(match.group(1))
-                day = int(match.group(2))
-                year_part = int(match.group(3))
-                # Handle 2-digit years (00-99)
-                if year_part < 100:
-                    year_part = 1900 + year_part if year_part < 50 else 2000 + year_part
-                date = datetime(year_part, month, day)
-                return date, date
-        
-        # Pattern 3: "17-Sep" or "17-Sept" (day-month)
-        if re.search(r'^\d{1,2}-[A-Za-z]{3}', date_str):
-            match = re.match(r'(\d{1,2})-([A-Za-z]{3})', date_str)
-            if match:
-                day = int(match.group(1))
-                month = month_map[match.group(2).lower()]
-                date = datetime(year, month, day)
-                return date, date
-        
-        # Pattern 4: Month only (e.g., "Sep", "October")
-        if re.match(r'^[A-Za-z]+$', date_str):
-            month_abbr = date_str[:3].lower()
-            if month_abbr in month_map:
-                month = month_map[month_abbr]
-                # Return first and last day of the month
-                start_date = datetime(year, month, 1)
-                if month == 12:
-                    end_date = datetime(year + 1, 1, 1)
-                else:
-                    end_date = datetime(year, month + 1, 1)
-                end_date = pd.Timestamp(end_date) - pd.Timedelta(days=1)
-                return start_date, end_date.to_pydatetime()
-    
-    except (ValueError, KeyError):
-        pass
-    
-    return None, None
+from Data_preprocessing.surge_preprocess.convert_datums import convert_datums
+from Data_preprocessing.sea_level_rise import compute_epoch_fix
+from Data_preprocessing.generate_tide import generate_tidal_ranges
 
-def generate_surge_data(df):
-    try:
-        surge_data = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\globalpeaksurgedb.csv", encoding='utf-8')
-    except UnicodeDecodeError:
-        surge_data = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\globalpeaksurgedb.csv", encoding='latin-1')
-
-    # Remove any garbled characters from column names
-    surge_data.columns = surge_data.columns.str.encode('ascii', 'ignore').str.decode('ascii')
-    surge_data = surge_data[surge_data['Country'] == 'US']
-    print('surge data shape after country filter: ', surge_data.shape)
-    # Clean Storm Name values - remove non-ASCII characters
-    surge_data['Storm Name'] = surge_data['Storm Name'].str.encode('ascii', 'ignore').str.decode('ascii').str.strip()
-    surge_data = surge_data[surge_data['Year'] >= 1900]
-
-    surge_data = surge_data[['Surge ID','Datum','Storm Name','Surge_m', 'Surge_ft','Storm_Tide_m', 'Storm_Tide_ft', 'Year', 'State', 'Lat', 'Lon', 'Storm Dates']]
-    dates =surge_data['Storm Dates'].values.tolist()
-    start_dates = []
-    end_dates = []
-    for i, date_str in enumerate(dates):
-        year = surge_data.iloc[i]['Year']
-        start_date, end_date = parse_storm_date(date_str, year)
-        start_dates.append(start_date)
-        end_dates.append(end_date)
-    surge_data['Start_Date'] = start_dates
-    surge_data['End_Date'] = end_dates
-    surge_data['Storm_Dates'] = dates
-    
-
-    #merge on df and do left join, fill missing values manually afterwards
-    df_for_surge_merge = df[['Unique_ID','ATCF_ID','name', 'Year', 'lf_state', 'lf_lat', 'lf_lon', 'lf_ISO_TIME']]
-
-    def append_none_values(lists_dict):
-        """Helper function to append None to all tracking lists"""
-        for list_obj in lists_dict.values():
-            list_obj.append(None)
-    
-    def append_surge_values(surge_row, lists_dict):
-        """Helper function to append surge data from a row"""
-        lists_dict['datum'].append(surge_row['Datum'])
-        lists_dict['surge_ms'].append(surge_row['Surge_m'])
-        lists_dict['surge_ft'].append(surge_row['Surge_ft'])
-        lists_dict['storm_tide_m'].append(surge_row['Storm_Tide_m'])
-        lists_dict['storm_tide_ft'].append(surge_row['Storm_Tide_ft'])
-        lists_dict['lat_lon_diffs'].append(surge_row['total_diff'])
-        lists_dict['start_dates'].append(surge_row['Start_Date'])
-        lists_dict['end_dates'].append(surge_row['End_Date'])
-        lists_dict['storm_dates'].append(surge_row['Storm Dates'])
-        lists_dict['Lat_db'].append(surge_row['Lat'])
-        lists_dict['Lon_db'].append(surge_row['Lon'])
-
-    #try different merge approach to find closest lat/lon
-    result_lists = {
-        'datum': [],
-        'surge_ms': [],
-        'surge_ft': [],
-        'storm_tide_m': [],
-        'storm_tide_ft': [],
-        'lat_lon_diffs': [],
-        'start_dates': [],
-        'end_dates': [],
-        'storm_dates': [],
-        'Lat_db': [],
-        'Lon_db': []
-    }
-    
-    sketchy_matches = []  # Track matches with distance > 2.0
-    print(len(df_for_surge_merge))
-    for index,row in df_for_surge_merge.iterrows():
-        storm_name = row['name']
-        year = row['Year']
-        state = row['lf_state']
-        lat = row['lf_lat']
-        lon = row['lf_lon']
-        matching_surges = surge_data[(surge_data['Storm Name'] == storm_name) & (surge_data['Year'] == year)].copy()
-        len_matching = len(matching_surges)
-        matching_surges['lat_diff'] = (matching_surges['Lat'] - lat).abs()
-        matching_surges['lon_diff'] = (matching_surges['Lon'] - lon).abs()
-        matching_surges['total_diff'] = matching_surges['lat_diff'] + matching_surges['lon_diff']
-        if len_matching == 0:
-            #try matching unnamed storms by year and closest lat/lon
-            try:
-                matching_surges = surge_data[(surge_data['Year'] == year)].copy()
-                if index == 1:
-                    print(matching_surges)
-                if len(matching_surges) == 0:
-                    append_none_values(result_lists)
-                    continue
-                #test if lf_iso_time is within start and end date
-                
-                iso_time = row['lf_ISO_TIME']
-                matching_surges['valid_date'] = matching_surges.apply(
-                    lambda x: x['Start_Date'] <= iso_time <= x['End_Date'] if pd.notna(x['Start_Date']) and pd.notna(x['End_Date']) else False,
-                    axis=1
-                )
-                matching_surges = matching_surges[matching_surges['valid_date'] == True]
-                if len(matching_surges) == 0:
-                    append_none_values(result_lists)
-                    continue
-
-                matching_surges['lat_diff'] = (matching_surges['Lat'] - lat).abs()
-                matching_surges['lon_diff'] = (matching_surges['Lon'] - lon).abs()
-                matching_surges['total_diff'] = matching_surges['lat_diff'] + matching_surges['lon_diff']
-                min_idx = matching_surges['total_diff'].idxmin()
-                if pd.isna(min_idx):
-                    append_none_values(result_lists)
-                    continue
-                closest_surge = matching_surges.loc[min_idx]
-                append_surge_values(closest_surge, result_lists)
-                if(closest_surge['total_diff'] > 2.0):
-                    sketchy_matches.append({
-                        'storm_name': storm_name,
-                        'year': year,
-                        'hurricane_lat': lat,
-                        'hurricane_lon': lon,
-                        'surge_lat': closest_surge['Lat'],
-                        'surge_lon': closest_surge['Lon'],
-                        'total_diff': closest_surge['total_diff'],
-                        'reason': 'Unnamed storm match - distance > 2.0'
-                    })
-                continue
-            except Exception as e:
-                append_none_values(result_lists)
-                print(f"Error processing storm {storm_name} in year {year}: {e}")
-                continue
-        if len_matching == 1 and matching_surges.iloc[0]['total_diff'] <= 2.0:
-            append_surge_values(matching_surges.iloc[0], result_lists)
-            continue
-        if len_matching == 1 and matching_surges.iloc[0]['total_diff'] > 2.0:
-            sketchy_matches.append({
-                'storm_name': storm_name,
-                'year': year,
-                'hurricane_lat': lat,
-                'hurricane_lon': lon,
-                'surge_lat': matching_surges.iloc[0]['Lat'],
-                'surge_lon': matching_surges.iloc[0]['Lon'],
-                'total_diff': matching_surges.iloc[0]['total_diff'],
-                'reason': 'Named storm match - distance > 2.0'
-            })
-            append_surge_values(matching_surges.iloc[0], result_lists)
-            continue
-        if len_matching > 1:
-            #calculate distance
-            min_idx = matching_surges['total_diff'].idxmin()
-            if pd.isna(min_idx):
-                append_none_values(result_lists)
-                continue
-            closest_surge = matching_surges.loc[min_idx]
-            if(closest_surge['total_diff'] > 2.0):
-                sketchy_matches.append({
-                    'storm_name': storm_name,
-                    'year': year,
-                    'hurricane_lat': lat,
-                    'hurricane_lon': lon,
-                    'surge_lat': closest_surge['Lat'],
-                    'surge_lon': closest_surge['Lon'],
-                    'total_diff': closest_surge['total_diff'],
-                    'reason': 'Multiple matches (named storm) - closest distance > 2.0'
-                })
-            append_surge_values(closest_surge, result_lists)
-        else:
-            append_none_values(result_lists)
-    df_for_surge_merge['Datum'] = result_lists['datum']
-    df_for_surge_merge['Surge_m'] = result_lists['surge_ms']
-    df_for_surge_merge['Surge_ft'] = result_lists['surge_ft']
-    df_for_surge_merge['Storm_Tide_m'] = result_lists['storm_tide_m']
-    df_for_surge_merge['Storm_Tide_ft'] = result_lists['storm_tide_ft']
-    df_for_surge_merge['Lat_Lon_Diff'] = result_lists['lat_lon_diffs']
-    df_for_surge_merge['Start_Date'] = result_lists['start_dates']
-    df_for_surge_merge['End_Date'] = result_lists['end_dates']
-    df_for_surge_merge['Storm_Dates'] = result_lists['storm_dates']
-    df_for_surge_merge['Lat_db'] = result_lists['Lat_db']
-    df_for_surge_merge['Lon_db'] = result_lists['Lon_db']
-    #save as excel to inspect missing values
-
-    #Put all relevant info into Storm_Tide_m
-    for row_index, row in df_for_surge_merge.iterrows():
-        if pd.isna(row['Storm_Tide_m']):
-            #try Storm_Tide_ft
-            if not pd.isna(row['Storm_Tide_ft']):
-                df_for_surge_merge.at[row_index, 'Storm_Tide_m'] = float(row['Storm_Tide_ft']) * 0.3048
-
-
-    
-    # Export sketchy matches
-    if sketchy_matches:
-        sketchy_df = pd.DataFrame(sketchy_matches)
-        sketchy_df.to_csv(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\sketchy_matches.csv', index=False)
-        print(f"\nFound {len(sketchy_matches)} sketchy matches (distance > 2.0)")
-        print(sketchy_df)
+def get_tide_instrument_error(year):
+    one_foot_in_meters = 0.3048
+    """Measurement error based on era and technology"""
+    if year < 1950:
+        return one_foot_in_meters  # ±1 foot (early manual gauges)
+    elif year < 1980:
+        return 0.5*one_foot_in_meters   # ±10 cm (analog electronic)
     else:
-        print("\nNo sketchy matches found!")
-    surge_data_df = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\raw_tool_data\all_surge_data.csv")
-
-    for row, index in df_for_surge_merge.iterrows():
-        name = index['name'].strip()
-        year = index['Year']
-        matching_surge = surge_data_df[(surge_data_df['Storm Name'].str.strip() == name) & (surge_data_df['Year'] == year)]
-        if not matching_surge.empty:
-            #find the highest value within 2 degrees lat/lon in total
-            lat = index['lf_lat']
-            lon = index['lf_lon']
-            matching_surge['lat_diff'] = (matching_surge['Lat'] - lat).abs()
-            matching_surge['lon_diff'] = (matching_surge['Lon'] - lon).abs()
-            matching_surge['total_diff'] = matching_surge['lat_diff'] + matching_surge['lon_diff']
-            #filter to only those within 2 degrees total
-            matching_surge = matching_surge[matching_surge['total_diff'] <= 2]
-            #pick the highest one of surge_m and storm_tide_m
-
-        if not matching_surge.empty:
-            # Get indices of max values, handling NaN
-            surge_idx = matching_surge['Surge_m'].idxmax()
-            tide_idx = matching_surge['Storm_Tide_m'].idxmax()
-            
-            # Check if we got valid indices (not NaN)
-            has_surge = pd.notna(surge_idx)
-            has_tide = pd.notna(tide_idx)
-            
-            if has_surge and has_tide:
-                best_surge = matching_surge.loc[surge_idx]
-                best_tide = matching_surge.loc[tide_idx]
-                best_data = best_tide if best_tide['Storm_Tide_m'] > best_surge['Surge_m'] else best_surge
-            elif has_surge:
-                best_data = matching_surge.loc[surge_idx]
-            elif has_tide:
-                best_data = matching_surge.loc[tide_idx]
-            else:
-                continue  # Skip if neither has valid data
-            
-            # Add values in new columns to preproccessed_hurricane_df
-            df_for_surge_merge.at[row, f'Surge_m'] = best_data['Surge_m']
-            df_for_surge_merge.at[row, f'Surge_ft'] = best_data['Surge_ft']
-            df_for_surge_merge.at[row, f'Storm_Tide_m'] = best_data['Storm_Tide_m']
-            df_for_surge_merge.at[row, f'Storm_Tide_ft'] = best_data['Storm_Tide_ft']
-            df_for_surge_merge.at[row, f'Datum'] = best_data['Datum']
-            df_for_surge_merge.at[row, f'Lat_Lon_Diff'] = best_data['total_diff']
-            df_for_surge_merge.at[row, f'Lat_db'] = best_data['Lat']
-            df_for_surge_merge.at[row, f'Lon_db'] = best_data['Lon']
-    df_for_surge_merge.to_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_inspection_with_tool.xlsx', index=False)
-    return df_for_surge_merge
+        return 0.1   # ±5 cm (modern digital)
 
 
-
-
-def call_datum_api(current_datum, height, lat, lon, region,target_metric = 'LMSL', absolute_string=''):
-    #construct api call to convert all unknown datums to a common datum, e.g. NAVD88
-    #this is a placeholder function and should be implemented with actual API calls
-    #Find appropiate region to call:
-    api =  f"https://vdatum.noaa.gov/vdatumweb/api/convert?s_v_frame={current_datum}&s_y={lat}&s_x={lon}&t_v_frame={target_metric}&units=meters&s_z={height}&s_v_unit=m&t_v_unit=m&region={region}"
-    if current_datum == 'NGVD29':
-        api = f"https://vdatum.noaa.gov/vdatumweb/api/convert?s_v_frame={current_datum}&s_y={lat}&s_x={lon}&t_v_frame={target_metric}&units=meters&s_z={height}&s_v_unit=m&t_v_unit=m&region={region}&s_h_frame=NAD27&t_h_frame=IGS14&t_v_geoid=xgeoid20b"
-    if region == 'chesapeak_delaware' or region == 'wgom'  and current_datum !='NAVD88' and current_datum != 'NGVD29':
-        api = f"https://vdatum.noaa.gov/vdatumweb/api/convert?s_v_frame={current_datum}&s_y={lat}&s_x={lon}&t_v_frame={target_metric}&units=meters&s_z={height}&s_v_unit=m&t_v_unit=m&region={region}&s_h_frame=IGS14&s_v_geoid=xgeoid20b&t_h_frame=IGS14&t_v_geoid=xgeoid20b"
-    if absolute_string != '':
-        api = absolute_string
-    response = requests.get(api)
-    if response.status_code == 200:
-        data = response.json()
-        return data, api
-manual_tweaks = {
-    'ID_8' : [29.224353380920125, -90.65386626746059],
-    'ID_115' : [30.109960897443557,-84.20482042792997],
-    'ID_239': [29.190595333223435, -89.2709359372307], #this one is quite far away, but the tidal range is quite low so prop okay:)
-    'ID_173': [29.175299739135266,-90.61787279040159],
-    'ID_226': [29.7688952695177, -93.18726130026378],
-    'ID_234': [29.54785677157314, -94.38455920351721]
-}
-def convert_datums():
-
-    path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check_converted.csv"
-    if os.path.exists(path):
-        print("Converted surge data already exists. Loading from file.")
-        return pd.read_csv(path)
+def estimate_surge_and_uncertainty(row):
+    
+    uncertainty = 0
+    uncertainty += get_tide_instrument_error(row['Year'])**2
+    if row['Surge_observed']:
+        return  row['Surge_m'], np.sqrt(uncertainty)
     else:
-        df_existing = pd.read_excel(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check.xlsx")
-        df_to_convert = df_existing[~df_existing['Datum'].isin(['Unknown', 'MSL'])]
-        df_to_convert = df_to_convert[df_to_convert['Datum'].notna()]
-        df_to_convert = df_to_convert[['Unique_ID', 'Datum', 'Storm_Tide_m', 'Lat_db', 'Lon_db']]
-        heights = []
-        uncertainties = []
-        source_frames = []
-        target_frames = []
-        for idx, row in df_to_convert.iterrows():
-            id = row['Unique_ID']
-            datum = row['Datum']
-            height = row['Storm_Tide_m']
-            lat = row['Lat_db']
-            lon = row['Lon_db']
-            if id in manual_tweaks:
-                lat, lon = manual_tweaks[id]
-            regions = {'Contiguous United States': 'contiguous', 'Chesapeake_Delaware': 'chesapeak_delaware', 'Western_Gulf_of_Mexico': 'wgom'}
-            if lat >= 36.0 and lat <= 39.466012 and lon >= -77.036871 and lon <= -75.000000:
-                region = 'chesapeak_delaware'
-            elif lat >= 25.8371 and lat <= 30 and lon >= -97.4344 and lon <= -81.3844:
-                region = 'wgom'
-            elif lat >= 24.396308 and lat <= 49.384358 and lon >= -125.0 and lon <= -66.93457:
-                region = 'contiguous'
-            if datum == 'Unknown' or pd.isna(datum) or datum == 'MSL':
-                continue
-            result,api = call_datum_api(datum, height, lat, lon, region)
-            if 't_z' in result and 'uncertainty' in result:
-                heights.append(result['t_z'])
-                uncertainties.append(result['uncertainty'])
-                source_frames.append(result['s_h_frame'])
-                target_frames.append(result['t_h_frame'])
-                continue
-            else:
-                if 'errorCode' in result and result['errorCode'] == 412 and datum == 'NGVD29':
-                    absolute_string = f"https://vdatum.noaa.gov/vdatumweb/api/convert?s_v_frame={datum}&s_y={lat}&s_x={lon}&t_v_frame=LMSL&units=meters&s_z={height}&s_v_unit=m&t_v_unit=m&region={region}&s_h_frame=NAD27"
-                    result,api =call_datum_api(datum, height, lat, lon, region, absolute_string=absolute_string)
-                    if 't_z' in result and 'uncertainty' in result:
-                        heights.append(result['t_z'])
-                        uncertainties.append(result['uncertainty'])
-                        source_frames.append(result['s_h_frame'])
-                        target_frames.append(result['t_h_frame'])
-                        continue
-                if 'errorCode' in result and result['message'] == 'For West Gulf Coast Region, Target Horizontal Frame should be IGS14 for Tidal':
-                    absolute_string = f"https://vdatum.noaa.gov/vdatumweb/api/convert?s_v_frame={datum}&s_y={lat}&s_x={lon}&t_v_frame=LMSL&units=meters&s_z={height}&s_v_unit=m&t_v_unit=m&region={region}&t_h_frame=IGS14&t_v_geoid=xgeoid20b"
-                    result,api =call_datum_api(datum, height, lat, lon, region, absolute_string=absolute_string)
-                    if 't_z' in result and 'uncertainty' in result:
-                        heights.append(result['t_z'])
-                        uncertainties.append(result['uncertainty'])
-                        source_frames.append(result['s_h_frame'])
-                        target_frames.append(result['t_h_frame'])
-                        continue
-                if 'errorCode' in result and datum == 'NGVD29':
-                    absolute_string = f"https://vdatum.noaa.gov/vdatumweb/api/convert?s_v_frame={datum}&s_y={lat}&s_x={lon}&t_v_frame=LMSL&units=meters&s_z={height}&s_v_unit=m&t_v_unit=m&region=contiguous&s_h_frame=NAD27"
-                    result,api =call_datum_api(datum, height, lat, lon, region, absolute_string=absolute_string)
-                    if 't_z' in result and 'uncertainty' in result:
-                        heights.append(result['t_z'])
-                        uncertainties.append(result['uncertainty'])
-                        source_frames.append(result['s_h_frame'])
-                        target_frames.append(result['t_h_frame'])
-                        continue
-                if 'errorCode' in result and region == 'wgom':
-                    absolute_string = f"https://vdatum.noaa.gov/vdatumweb/api/convert?s_v_frame={datum}&s_y={lat}&s_x={lon}&t_v_frame=LMSL&units=meters&s_z={height}&s_v_unit=m&t_v_unit=m&region=contiguous"
-                    result,api =call_datum_api(datum, height, lat, lon, region, absolute_string=absolute_string)
-                    if 't_z' in result and 'uncertainty' in result:
-                        heights.append(result['t_z'])
-                        uncertainties.append(result['uncertainty'])
-                        source_frames.append(result['s_h_frame'])
-                        target_frames.append(result['t_h_frame'])
-                        continue
+        converted =  not pd.isna(row['Converted_MSL'])
+        if converted:
+            storm_tide = row['Converted_MSL']
+        else: 
+            storm_tide = row['Storm_Tide_m']
+        print(storm_tide)
+        surge_estimate = storm_tide - 0.5 * row['Tidal_Range_peak']
+        print(surge_estimate)
+        if (row['Year'] > 2001 and row['Datum'] in ['NAVD88', 'NGVD29']) or row['Year'] < 1983:
+            surge_estimate += row['Offset_to_1983_2001_epoch_m']
+            uncertainty += row['Error_Offset_m']**2
+        print(f"Surge estimate after epoch correction: {surge_estimate}, with uncertainty: {np.sqrt(uncertainty)}")
+        #add extra uncertainties
+        if not pd.isna(row['Converted_uncertainty_MSL']):
+            uncertainty += row['Converted_uncertainty_MSL']**2
+        tidal_diff_percentage = np.array([0,0,0.023448276,0.255715495,0.100917431,0,0,0,0.531958763,0.161637931,0.050701187,0.131818182,0.02739726,0.203870968]) #from excel file
+        # Calculate statistics
+        if row['Datum'] != 'gauge':
+            std_diff = np.std(tidal_diff_percentage)
+            uncertainty += (std_diff * storm_tide)**2
+        # add datum uncertainty if datum is unknown
+        if row['Datum'] == 'Unknown':
+            uncertainty += (0.33 * row['Tidal_Range_peak'])**2  # assume 50% of tidal range as additional uncertainty for unknown datums¨
+        #maybe add extra location based uncertainty. 
+        return surge_estimate, np.sqrt(uncertainty)
 
-                else:
-                    print(f"new error for {id}: {result}")
-                    print(datum, height, lat, lon, region)
-                    heights.append(pd.NA)
-                    uncertainties.append(pd.NA)
-                    source_frames.append(pd.NA)
-                    target_frames.append(pd.NA)
-                    continue
-                print(f"Error for {id}: {result}")
-                heights.append(pd.NA)
-                uncertainties.append(pd.NA)
-                source_frames.append(pd.NA)
-                target_frames.append(pd.NA)
-                
-        df_to_convert['Converted_value'] = heights
-        df_to_convert['Converted_uncertainty'] = uncertainties
-        df_to_convert['Source_frame'] = source_frames
-        df_to_convert['Target_frame'] = target_frames
-        df_to_convert.to_csv(path, index=False)
-        return df_to_convert
-def get_inspected_surge_data(select_out_of_range=False, convert_datum=True):
+def get_inspected_data_full_conversion(select_out_of_range=False, convert_datum=True, above_normal_as_surge=False):
     path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check.xlsx"
+
+    df_existing = pd.read_excel(path)
+    if above_normal_as_surge:
+        #convert storm tides marked as 'Above Normal' datum to surges
+        for idx, row in df_existing.iterrows():
+            if row['Datum'] == 'Above Normal':
+                if pd.isna(row['Surge_m']) and not pd.isna(row['Storm_Tide_m']):
+                    df_existing.at[idx, 'Surge_m'] = row['Storm_Tide_m']
+    else:
+        #convert 'Above Normal' to 'Unknown' datum because we cannot be sure of the datum
+        df_existing['Datum'] = df_existing['Datum'].replace('Above Normal', 'Unknown')
+    valid_manual_checks = ['yes', 'surge only', 'gauge']
+    if select_out_of_range:
+        valid_manual_checks.append('out of range')
+    df_existing = df_existing[df_existing['Manual check'].isin(valid_manual_checks)]
+    #add tidal range data
+    tidal_ranges_df = generate_tidal_ranges()
+    #merge on Unique_ID
+    df_existing = df_existing.merge(tidal_ranges_df[['Unique_ID', 'Tidal_Range_peak']], left_on='Unique_ID', right_on='Unique_ID', how='left')
+    if convert_datum:
+        converted_df = convert_datums()
+        df_existing = df_existing.merge(converted_df[['Unique_ID', 'Converted_value', 'Converted_uncertainty']], on='Unique_ID', how='left')
+        df_existing.rename(columns={'Converted_value': 'Converted_MSL', 'Converted_uncertainty': 'Converted_uncertainty_MSL'}, inplace=True)
+    if not convert_datum:
+        df_existing['Converted_MSL'] = np.nan
+        df_existing['Converted_uncertainty_MSL'] = np.nan
+    df_existing['Datum'] = df_existing['Datum'].replace(pd.NA, 'Unknown')
+    epoch_correction_df = compute_epoch_fix()
+    df_existing = df_existing.merge(epoch_correction_df[['Unique_ID', 'Offset_to_1983_2001_epoch_m', 'Error_Offset_m']], on='Unique_ID', how='left')
+    #add mask that indicates whether surge value is observed or calculated based on storm tide and tidal range
+    surge_observed_mask = ~df_existing['Surge_m'].isna()
+    df_existing['Surge_observed'] = surge_observed_mask
+    unique_ids = df_existing['Unique_ID'].values
+    surge_guesses = []
+    uncertainties = []
+    for idx, row in df_existing.iterrows():
+        surge_estimate, surge_uncertainty = estimate_surge_and_uncertainty(row)
+        surge_guesses.append(surge_estimate)
+        uncertainties.append(surge_uncertainty)
+    
+    return unique_ids,surge_guesses,uncertainties
+
+def get_inspected_data_raw_scenarios():
+    path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check.xlsx"
+    df_existing = pd.read_excel(path)
+    valid_manual_checks = ['yes', 'surge only', 'gauge']
+    df_existing = df_existing[df_existing['Manual check'].isin(valid_manual_checks)]
+    tidal_ranges_df = generate_tidal_ranges()
+    df_existing = df_existing.merge(tidal_ranges_df[['Unique_ID', 'Tidal_Range_peak']], left_on='Unique_ID', right_on='Unique_ID', how='left')
+    #1st scenario: use surge and storm tide as the same variable
+    ids = []
+    surge_values_first = []
+    uncertainties_first = []
+    for idx, row in df_existing.iterrows():
+        ids.append(row['Unique_ID'])
+        uncertainties_first.append(get_tide_instrument_error(row['Year']))
+        if pd.isna(row['Surge_m']):
+            surge_values_first.append(row['Storm_Tide_m'])
+        else:
+            surge_values_first.append(row['Surge_m'])
+    df_first = pd.DataFrame({
+        'Unique_ID': ids,
+        'Surge_m': surge_values_first,
+        'Uncertainty_m': uncertainties_first
+    })
+    # second scenario: try to assume that measurements happens at peak tide
+    ids = []
+    surge_values_second = []
+    uncertainties_second = []
+    for idx, row in df_existing.iterrows():
+        ids.append(row['Unique_ID'])
+        uncertainties_second.append(get_tide_instrument_error(row['Year']))
+        if pd.isna(row['Surge_m']):
+            surge_values_second.append(row['Storm_Tide_m'] - 0.5*row['Tidal_Range_peak'])
+        else:
+            surge_values_second.append(row['Surge_m'])
+    df_second = pd.DataFrame({
+        'Unique_ID': ids,
+        'Surge_m': surge_values_second,
+        'Uncertainty_m': uncertainties_second
+    })
+    merged_df = pd.merge(df_first, df_second, on='Unique_ID', suffixes=('_storm_tide_as_surge', '_subtract_peak_tide'))
+    return merged_df
+
+def generate_surge_data():
+    path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_all_scenarios.csv"
     if os.path.exists(path):
         print(f"Surge data file already exists at {path}.")
-        df_existing = pd.read_excel(path)
-        print(df_existing['Manual check'].unique())
-        valid_manual_checks = ['yes', 'surge only', 'gauge']
-        if select_out_of_range:
-            valid_manual_checks.append('out of range')
-        df_existing = df_existing[df_existing['Manual check'].isin(valid_manual_checks)]
-        #add tidal range data
-        tidal_ranges_df = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\tidal_ranges_peak.csv")
-        print(tidal_ranges_df.columns)
-        #merge on Unique_ID
-        df_existing = df_existing.merge(tidal_ranges_df[['Unique_ID', 'Tidal_Range_peak']], left_on='Unique_ID', right_on='Unique_ID', how='left')
-        print(df_existing.columns)
-
-        columns_to_keep = ['Unique_ID', 'Datum', 'Surge_m','Storm_Tide_m', 'Manual check', 'Tidal_Range_peak', 'Lat_db', 'Lon_db']
-        df_existing = df_existing[columns_to_keep]
-
-        if convert_datum:
-            converted_df = convert_datums()
-            df_existing = df_existing.merge(converted_df[['Unique_ID', 'Converted_value', 'Converted_uncertainty']], on='Unique_ID', how='left')
-            df_existing.rename(columns={'Converted_value': 'Converted_MSL', 'Converted_uncertainty': 'Converted_uncertainty_MSL'}, inplace=True)
-
-        df_existing['Datum'] = df_existing['Datum'].replace(pd.NA, 'Unknown')
-        print(df_existing['Datum'].unique())
-        return df_existing
+        return pd.read_csv(path)
     else:
-        raise FileNotFoundError(f"Inspected surge data file not found at {path}. Please run generate_surge_data() first.")
-#print(get_inspected_surge_data())
+        #generate surge data and uncertainties for all scenarios and save to csv
+        #first scenario: 'above normal' is treated as surge, and conversion is done for known datums
+        unique_ids_first, surge_guesses_first, uncertainties_first = get_inspected_data_full_conversion(select_out_of_range=False, convert_datum=True, above_normal_as_surge=True)
+        df_surge_first = pd.DataFrame({
+            'Unique_ID': unique_ids_first,
+            'Surge_m': surge_guesses_first,
+            'Uncertainty_m': uncertainties_first
+        })
+        #second scenario treat above normal as unknown datum 
+        unique_ids_second, surge_guesses_second, uncertainties_second = get_inspected_data_full_conversion(select_out_of_range=False, convert_datum=True, above_normal_as_surge=False)
+        df_surge_second = pd.DataFrame({
+            'Unique_ID': unique_ids_second,
+            'Surge_m': surge_guesses_second,
+            'Uncertainty_m': uncertainties_second
+        })
+        merged = df_surge_first.merge(df_surge_second, on='Unique_ID', suffixes=('_full_conversion_AN_as_surge', '_full_conversion_AN_as_unknown'))
+        #next two scenarios are merely to test the roboustness of the conversion in regards to if it even 
+        #add anything to the model parameters or that the data itself is mostly driven by surge and not trends
+        #coming from slr corrections, datum corrections or unknown datums. which just infuses more variability to
+        #the model parameters
+        raw_scenarios = get_inspected_data_raw_scenarios()
+
+        merged = merged.merge(raw_scenarios, on='Unique_ID', how='left')
+        merged.to_csv(path, index=False)
+
+        return merged

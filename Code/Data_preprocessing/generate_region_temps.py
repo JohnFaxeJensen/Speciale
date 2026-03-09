@@ -13,6 +13,12 @@ import regionmask
 import os
 
 def generate_temp_data(df):
+    path_hadisst = r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/mean_sst_regions_HadISST.csv"
+    path_icoads = r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/mean_sst_regions_ICOADS.csv"
+    if os.path.exists(path_hadisst) and os.path.exists(path_icoads):
+        print("Regional temp data already exists. Loading from file.")
+        return pd.read_csv(path_hadisst), pd.read_csv(path_icoads)
+
     # Define regions using shapefiles
     gulf = gpd.read_file(r"C:/Users/123ti/Documents/Speciale_git/Speciale/temperature_regions/gulf_of_mexico/iho.shp")
     caribbean = gpd.read_file(r"C:/Users/123ti/Documents/Speciale_git/Speciale/temperature_regions/caribbean_sea/iho.shp")
@@ -106,11 +112,6 @@ def generate_temp_data(df):
         merged_df.drop(columns=['region_gc', 'region_mdr'], inplace=True)
         
         return merged_df
-
-    #check if file exists?
-    if os.path.exists(r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/mean_sst_regions_HadISST.csv") and os.path.exists(r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/mean_sst_regions_ICOADS.csv"):
-        print("Regional temp data already exists. Loading from file.")
-        return pd.read_csv(r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/mean_sst_regions_HadISST.csv"), pd.read_csv(r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/mean_sst_regions_ICOADS.csv")
 
     # HadISST processing
     ds = xr.open_dataset(r"C:/Users/123ti/Documents/Speciale_git/Speciale/temp_data/HadISST_sst.nc")

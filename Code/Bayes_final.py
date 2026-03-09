@@ -43,7 +43,7 @@ def get_pressure_uncertainty(wind_raw, wind_uncertainties, years):
     #scale here: https://www.nhc.noaa.gov/aboutsshws.php
     def get_time_factor(year):
         if year < 1965:
-            return 1.5 # this should probably change, just an estimate I made to reflect higher uncertainty in older measurements, but this is a very rough estimate and could be improved with more research into the historical measurement techniques and their uncertainties
+            return 2 # this should probably change, just an estimate I made to reflect higher uncertainty in older measurements, but this is a very rough estimate and could be improved with more research into the historical measurement techniques and their uncertainties
         else:
             return 1.0
     pressure_uncertainty_list = []
@@ -72,6 +72,7 @@ def get_pressure_uncertainty(wind_raw, wind_uncertainties, years):
 
     return np.array(pressure_uncertainty_list), np.array(pressure_min_list), np.array(pressure_max_list)
 
+
 def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_variable='basedamage'):
     """
     Build and fit a hurricane damage model with configurable terms.
@@ -99,6 +100,8 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         raise ValueError("model_spec must be provided as a dictionary specifying model terms.")
     df_clean = df.dropna(subset=[observed_variable, 'population', 'WPC', 'lf_wind', 'lf_pressure'])
     df_clean = df_clean[df_clean[observed_variable] > 0].copy()
+    if "surge_estimated" in model_spec:
+        df_clean = df_clean.dropna(subset=['Lat_db', 'Lon_db']) # need at least surge or storm tide measurement to estimate surge
     # Clean data
     observed = df_clean[observed_variable].values
     # transform to log-space
@@ -183,24 +186,14 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
     category_1_wind_baseline = 95*0.868976242 #convert mph to knots
     category_1_pressure_baseline = 980 #mb
-    wind_speed_relative = wind_speed_raw / category_1_wind_baseline
-    pressure_relative = pressure_raw / category_1_pressure_baseline
+
     travel_speed = travel_speed / 10 #normalize to 10 m/s
     travel_speed_before = travel_speed_before / 10 #normalize to 10 m/s
     # modelled_wind_relative = modelled_wind_raw / category_1_wind_baseline
     # residual_wind_relative = residual_wind_raw / category_1_wind_baseline
 
-    # Standardize pressure and wind
-    scaler = StandardScaler()
-    pressure_wind_scaled = scaler.fit_transform(np.column_stack([pressure_relative, wind_speed_relative]))
 
-    # Apply PCA
-    pca = PCA(n_components=2)
-    pca_components = pca.fit_transform(pressure_wind_scaled)
 
-    # Use PCA components in your model
-    pc1, pc2 = pca_components[:, 0], pca_components[:, 1]
-    
     #use delta_P as pressure proxy
     delta_P = (1013.25-pressure_raw)* 100  #convert to Pa
     delta_P_baseline = (1013.25 - category_1_pressure_baseline)*100
@@ -213,15 +206,8 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     category_1_ib_baseline = (1013.25 - category_1_pressure_baseline) * 100 / (density_water * g)
     ib_vals_relative = ib_vals_raw / category_1_ib_baseline
     
-    ibtracks_speed = df_clean['STORM_SPEED_ms'].values
-    storm_tides_m = df_clean['Storm_Tide_m'].values
-    storm_surge_m = df_clean['Surge_m'].values
-    has_storm_tide = ~np.isnan(storm_tides_m)
-    has_surge = ~np.isnan(storm_surge_m)
-    tidal_range_peak = df_clean['Tidal_Range_peak'].values
-    #group by datum
-    datum_idx = pd.Categorical(df_clean['Datum']).codes
-    n_datums = len(np.unique(datum_idx))
+
+
 
 
 
@@ -233,97 +219,161 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     economic_var = np.log(population*WPC/area)
     lr = LinearRegression().fit(economic_var.reshape(-1, 1), np.array(delta_years))
 
-    converted_msl_storm_tides = df_clean['Converted_MSL'].values
-    converted_msl_uncertainty = df_clean['Converted_uncertainty_MSL'].values
 
-    # Fill storm tide values: use converted if available, fallback to original measurement
-    storm_tides_m_converted = np.where(
-        ~np.isnan(converted_msl_storm_tides),  # condition: converted value exists
-        converted_msl_storm_tides,             # use converted value
-        storm_tides_m                          # fallback to original measurement
-    )
 
     with pm.Model() as model:
 
 
         # Priors for the linear combination
-        alpha = pm.Normal("alpha", mu=0, sigma=50)
+        alpha = pm.Normal("alpha", mu=0, sigma=200)
         sigma = pm.HalfNormal("sigma", sigma=20)
-        
+
         # Build mu dynamically based on model_spec
         mu = alpha
+
+        wind_true_specs = ["wind",]
+        needs_wind_true = any(model_spec.get(spec, False) for spec in wind_true_specs)
+        pressure_true_specs = ["pressure", "pressure_threshold", "pressure_trend_interaction",]
+        need_pressure_true = any(model_spec.get(spec, False) for spec in pressure_true_specs)
+        if needs_wind_true:
+            wind_true = pm.Normal("wind_true", 
+                                mu=wind_speed_raw, 
+                                sigma=wind_uncertainties, 
+                                shape=len(wind_speed_raw))
+            wind_speed_relative = wind_true / category_1_wind_baseline
+            
+        if need_pressure_true:
+
+            pressure_sigma = pm.TruncatedNormal("pressure_sigma", 
+                                                mu=pressure_uncertainties, 
+                                                sigma=(pressure_max_list-pressure_min_list)/4, lower=pressure_min_list
+                                                , upper=pressure_max_list, shape=len(pressure_uncertainties))
+            # pressure_sigma = pm.Uniform("pressure_sigma",
+            #                 lower=pressure_min_list,
+            #                 upper=pressure_max_list,
+            #                 shape=len(pressure_uncertainties))
+
+            pressure_true = pm.Normal("pressure_true", mu=pressure_raw,
+                                    sigma=pressure_sigma, shape=len(pressure_raw)) # maybe change this here
+            # pm.Normal("pressure_like",        #maybe include the likelihood prob not.
+            # mu=pressure_true,
+            # sigma=pressure_sigma,  # each obs constrains proportional to confidence
+            # observed=pressure_raw)
+
+            delta_P = (1013.25-pressure_true)* 100  #convert to Pa
+            delta_P_baseline = (1013.25 - category_1_pressure_baseline)*100
+            delta_P_relative = delta_P / delta_P_baseline  #Pa
+
+        if model_spec.get("raw_pressure", False):
+            pressure_coef = pm.Normal("pressure_coef", sigma=10)
+            delta_P = (1013.25-pressure_raw)* 100  #convert to Pa
+            delta_P_baseline = (1013.25 - category_1_pressure_baseline)*100
+            delta_P_relative = delta_P / delta_P_baseline  #Pa
+
+            mu = mu + pressure_coef*delta_P_relative
+        if model_spec.get("raw_wind", False):
+            wind_coef = pm.Normal("wind_coef", sigma=5)
+            wind_speed_relative = wind_speed_raw / category_1_wind_baseline
+            mu = mu + wind_coef*wind_speed_relative
+
+
+        # if model_spec.get("surge_estimated", False):
+
+        #     tidal_diff_percentage = np.array([0,0,0.023448276,0.255715495,0.100917431,0,0,0,0.531958763,0.161637931,0.050701187,0.131818182,0.02739726,0.203870968]) #from excel file
+
+        #     # Calculate statistics
+
+        #     std_diff = np.std(tidal_diff_percentage)
+        #     surge_mu = np.where(
+        #         np.isnan(storm_surge_m),
+        #         storm_tides_m_converted - 0.5 * tidal_range_peak,  # prior guess for missing surge
+        #         storm_surge_m            # observed values
+        #     )
+            
+
+
+        #     # Empirical tidal timing uncertainty from 14-station analysis (std dev of measured offsets)
+        #     empirical_tidal_std = std_diff*storm_tides_m_converted  #multiply total water level with std of percentage difference to get empirical tidal uncertainty in meters
+        #     measurement_uncertainty = np.array([get_tide_instrument_error(year) for year in years])  #uncertainty from tide gauge measurement, based on era and technology)
+        #     # add extra uncertainty from unknown datum
+        #     # make a full-length boolean array for unknown datum per observation
+        #     has_unknown_datum = (df_clean['Datum'].values == 'Unknown')
+        #     datum_conversion_uncertainty = converted_msl_uncertainty
+        #     datum_uncertainty = tidal_range_peak*0.33
+        #     # maybe add location uncertainty as well
+            
+        #     # For missing surge observations, include tidal + measurement uncertainty,
+        #     # and add datum uncertainty only where the datum is unknown.
+        #     storm_tide_error = (
+        #         empirical_tidal_std**2 + measurement_uncertainty**2 + np.where(has_unknown_datum, datum_uncertainty**2, 0.0) + np.where(~np.isnan(converted_msl_storm_tides), datum_conversion_uncertainty**2, 0.0)
+        #     )
+        #     storm_tide_error = np.sqrt(storm_tide_error)
+
+        #     surge_prior_sigma = np.where(
+        #         has_surge,
+        #         measurement_uncertainty,  # almost deterministic for observed
+        #         storm_tide_error
+        #     )
+
+
+        #     # surge_true = pm.TruncatedNormal(
+        #     #     "surge_true",
+        #     #     mu=surge_mu,
+        #     #     sigma=surge_prior_sigma,
+        #     #     lower=0.0,
+        #     #     shape=len(storm_surge_m)
+        #     # )
+        #     sigma_log_raw = surge_prior_sigma / np.maximum(surge_mu, 1e-3)
+        #     sigma_log = np.clip(sigma_log_raw, 0.05, 1.0)
+        #     surge_true = pm.LogNormal(
+        #         "surge_true",
+        #         mu=np.log(np.maximum(surge_mu, 1e-6)),  # add small constant to avoid log(0)
+        #         sigma=sigma_log,
+        #         shape=len(storm_surge_m)
+        #     )
+
+        #     surge_coef = pm.Normal("surge_coef", sigma=10)
+        #     mu = mu + surge_coef * surge_true
         
-        for spec in model_spec:
-            if 'wind' in spec: 
-                wind_true = pm.Normal("wind_true", mu=wind_speed_raw,
-                                        sigma=wind_uncertainties, shape=len(wind_speed_raw))
-                
-                #maybe include next bit im not sure i should contrain the model on the wind measurements given the uncertainty in them, or if i should just use the raw measurements and let the model learn the relationship with damage, but it seems more principled to include the measurement uncertainty in the model rather than treating the raw measurements as ground truth
-                # pm.Normal("wind_like", 
-                # mu=wind_true,
-                # sigma=wind_uncertainties,  # each obs constrains proportional to confidence
-                # observed=wind_speed_raw)
-                wind_speed_relative = wind_true / category_1_wind_baseline
 
-            if 'pressure' in spec:
-                #infer sigma from pressure uncertainty, but allow for some flexibility with a scaling factor
-                pressure_sigma = pm.TruncatedNormal("pressure_sigma", 
-                                                    mu=pressure_uncertainties, 
-                                                    sigma=(pressure_max_list-pressure_min_list)/4, lower=pressure_min_list
-                                                    , upper=pressure_max_list, shape=len(pressure_uncertainties))
-                # pressure_sigma = pm.Uniform("pressure_sigma",
-                #                 lower=pressure_min_list,
-                #                 upper=pressure_max_list,
-                #                 shape=len(pressure_uncertainties))
+        if model_spec.get("surge_estimated_trunc", False):
+            tidal_diff_percentage = np.array([0,0,0.023448276,0.255715495,0.100917431,0,0,0,0.531958763,0.161637931,0.050701187,0.131818182,0.02739726,0.203870968]) #from excel file
 
-                pressure_true = pm.Normal("pressure_true", mu=pressure_raw,
-                                        sigma=pressure_sigma, shape=len(pressure_raw)) # maybe change this here
-                # pm.Normal("pressure_like",        #maybe include the likelihood prob not.
-                # mu=pressure_true,
-                # sigma=pressure_sigma,  # each obs constrains proportional to confidence
-                # observed=pressure_raw)
+            # Calculate statistics
 
-                delta_P = (1013.25-pressure_true)* 100  #convert to Pa
-                delta_P_baseline = (1013.25 - category_1_pressure_baseline)*100
-                delta_P_relative = delta_P / delta_P_baseline  #Pa
-
-        if model_spec.get("raw_storm_tide", False):
-            #just use surge as storm tide proxy
-
-            storm_tides_m_imputed = np.where(has_storm_tide, storm_tides_m, storm_surge_m)
-
-            storm_tide_coef = pm.Normal("storm_tide_coef", sigma=10)
-            mu = mu + storm_tide_coef * storm_tides_m_imputed
-
-
-
-
-        if model_spec.get("surge_estimated", False):
+            std_diff = np.std(tidal_diff_percentage)
             surge_mu = np.where(
                 np.isnan(storm_surge_m),
                 storm_tides_m_converted - 0.5 * tidal_range_peak,  # prior guess for missing surge
                 storm_surge_m            # observed values
             )
-            tidal_uncertainty = tidal_range_peak * 0.5
-            measurement_uncertainty = 0.2 #maybe add time dependent uncertainty here as well, with higher uncertainty for older measurements
+            
+
+
+            # Empirical tidal timing uncertainty from 14-station analysis (std dev of measured offsets)
+            empirical_tidal_std = std_diff*storm_tides_m_converted  #multiply total water level with std of percentage difference to get empirical tidal uncertainty in meters
+            measurement_uncertainty = np.array([get_tide_instrument_error(year) for year in years])  #uncertainty from tide gauge measurement, based on era and technology)
             # add extra uncertainty from unknown datum
             # make a full-length boolean array for unknown datum per observation
             has_unknown_datum = (df_clean['Datum'].values == 'Unknown')
-            datum_uncertainty = 0.5  # probably estimate this in some way maybe use datum converter.
+            datum_conversion_uncertainty = converted_msl_uncertainty
+            datum_uncertainty = tidal_range_peak*0.33
             # maybe add location uncertainty as well
-
+            
             # For missing surge observations, include tidal + measurement uncertainty,
             # and add datum uncertainty only where the datum is unknown.
-            missing_datum_sq = (
-                tidal_uncertainty**2 + measurement_uncertainty**2 + np.where(has_unknown_datum, datum_uncertainty**2, 0.0)
+            storm_tide_error = (
+                empirical_tidal_std**2 + measurement_uncertainty**2 + np.where(has_unknown_datum, datum_uncertainty**2, 0.0) + np.where(~np.isnan(converted_msl_storm_tides), datum_conversion_uncertainty**2, 0.0)
             )
-            base_sigma_missing = np.sqrt(missing_datum_sq)
+            storm_tide_error = np.sqrt(storm_tide_error)
 
             surge_prior_sigma = np.where(
                 has_surge,
                 measurement_uncertainty,  # almost deterministic for observed
-                base_sigma_missing
+                storm_tide_error
             )
+
+
 
             surge_true = pm.TruncatedNormal(
                 "surge_true",
@@ -333,78 +383,9 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
                 shape=len(storm_surge_m)
             )
 
-            surge_coef = pm.Normal("surge_coef", sigma=10)
-            mu = mu + surge_coef * surge_true
-
-        if model_spec.get("surge_estimated_li", False):
-            surge_mu = np.where(
-                np.isnan(storm_surge_m),
-                storm_tides_m_converted - 0.5 * tidal_range_peak,  # prior guess for missing surge
-                storm_surge_m            # observed values
-            )
-            tidal_uncertainty = tidal_range_peak * 0.5
-            measurement_uncertainty = 0.2 #maybe add time dependent uncertainty here as well, with higher uncertainty for older measurements
-            # add extra uncertainty from unknown datum
-            # make a full-length boolean array for unknown datum per observation
-            has_unknown_datum = (df_clean['Datum'].values == 'Unknown')
-            datum_uncertainty = 0.5  # probably estimate this in some way maybe use datum converter.
-            # maybe add location uncertainty as well
-
-            # For missing surge observations, include tidal + measurement uncertainty,
-            # and add datum uncertainty only where the datum is unknown.
-            missing_datum_sq = (
-                tidal_uncertainty**2 + measurement_uncertainty**2 + np.where(has_unknown_datum, datum_uncertainty**2, 0.0)
-            )
-            base_sigma_missing = np.sqrt(missing_datum_sq)
-
-            surge_prior_sigma = np.where(
-                has_surge,
-                measurement_uncertainty,  # almost deterministic for observed
-                base_sigma_missing
-            )
-
-            surge_true = pm.TruncatedNormal(
-                "surge_true",
-                mu=surge_mu,
-                sigma=surge_prior_sigma,
-                lower=0.0,
-                shape=len(storm_surge_m)
-            )
-            pm.Normal("surge_like",
-                mu=surge_true[has_surge],
-                sigma=2,  # each obs constrains proportional to confidence
-                observed=storm_surge_m[has_surge]
-            )
 
             surge_coef = pm.Normal("surge_coef", sigma=10)
             mu = mu + surge_coef * surge_true
-
-        if model_spec.get("water_level_estimated", False):
-            storm_tide_mu = np.where(
-                np.isnan(storm_tides_m),
-                storm_surge_m + 0.5 * tidal_range_peak,  # prior guess for missing surge
-                storm_tides_m_converted           # observed values
-            )
-            tidal_uncertainty = tidal_range_peak * 0.5
-            measurement_uncertainty = 0.2 #maybe add time dependent uncertainty here as well, with higher uncertainty for older measurements
-            # add extra uncertainty from unknown datum
-            has_unknown_datum = (df_clean['Datum'].values == 'Unknown')
-            datum_uncertainty = 0.5  # probably estimate this in some way maybe use datum converter.
-            sigmas = (
-                tidal_uncertainty**2 + measurement_uncertainty**2 + np.where(has_unknown_datum, datum_uncertainty**2, 0.0)
-            )
-
-            water_level_true = pm.TruncatedNormal(
-                "water_level_true",
-                mu=storm_tide_mu,
-                sigma=np.sqrt(sigmas),
-                lower=0.0,
-                shape=len(storm_tides_m)
-            )
-            water_level_coef = pm.Normal("water_level_coef", sigma=10)
-            mu = mu + water_level_coef * water_level_true
-
-
 
         if model_spec.get("economic", False):
             economic_coef = pm.Normal("economic_coef", sigma=10)
@@ -413,7 +394,17 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         if model_spec.get("economic_exp", False):
             economic_coef_exp = pm.Normal("economic_coef_exp", sigma=10)
             mu = mu + economic_coef_exp*(population*WPC/area)
-
+        if model_spec.get("economic_vulnerability", False):
+            unique_states = df_clean['lf_state'].unique()
+            # Create mapping from state names to integer indices
+            state_to_idx = {state: idx for idx, state in enumerate(unique_states)}
+            state_indices = np.array([state_to_idx[state] for state in df_clean['lf_state'].values])
+            
+            vulnerability_by_state = pm.Normal("vulnerability_by_state", mu=1, sigma=0.3, shape=len(unique_states))
+            vulnerability_by_obs = vulnerability_by_state[state_indices]
+            vulnerability_coef = pm.Normal("vulnerability_coef", sigma=10)
+            economic_coef_vuln = pm.Normal("economic_coef_vuln", sigma=10)
+            mu = mu + economic_coef_vuln*np.log(population*WPC/area) + vulnerability_coef*vulnerability_by_obs
 
         if model_spec.get("economic_split", False):
             economic_coef_pop = pm.Normal("economic_coef_pop", sigma=10)
@@ -442,18 +433,34 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             wind_coef = pm.Normal("wind_coef", sigma=10)
             mu = mu + wind_coef*wind_speed_relative
 
-        # if model_spec.get("modelled_wind", False):
-        #     modelled_wind_coef = pm.Normal("modelled_wind_coef", sigma=5)
-        #     mu = mu + modelled_wind_coef*modelled_wind_relative
-        #     wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
-        #     mu = mu + wind_coef_residual*residual_wind_relative
-        # if model_spec.get("residual_wind", False):
-        #     wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
-        #     mu = mu + wind_coef_residual*residual_wind_relative
+        if model_spec.get("modelled_wind", False):
+
+            # Use the inferred pressure_true to predict wind
+            modelled_wind_raw = equation_11_wind(pressure_raw, df_clean['lf_lat'].values, travel_speed)
+            modelled_wind_relative = modelled_wind_raw / category_1_wind_baseline
+
+            residual_wind_raw = wind_speed_raw - modelled_wind_raw
+            residual_wind_relative = residual_wind_raw / category_1_wind_baseline
+            
+            # Add both to your model
+            modelled_wind_coef = pm.Normal("modelled_wind_coef", sigma=5)
+            wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
+            mu = mu + modelled_wind_coef * modelled_wind_relative
+            mu = mu + wind_coef_residual * residual_wind_relative
+        if model_spec.get("residual_wind", False):
+            wind_coef_residual = pm.Normal("wind_coef_residual", sigma=5)
+            mu = mu + wind_coef_residual*residual_wind_relative
         if model_spec.get("wind_power_law", False):
+            #prior here: chrome-extension://oemmndcbldboiebfnladdacbdfmadadm/https://www.nature.com/articles/nature07234.pdf?utm_source=wiley&getft_integrator=wiley
             wind_power_law_coef = pm.Normal("wind_power_law_coef", mu=9, sigma=4)
-            wind_power_law = np.log(wind_speed_relative)*(wind_power_law_coef)
+            raw_wind_ms = wind_speed_raw * 0.514444 #convert knots to m/s
+            wind_power_law = np.log(raw_wind_ms)*(wind_power_law_coef)
             mu = mu + wind_power_law
+        if model_spec.get("wind_expert_exp", False):
+            #prior here : chrome-extension://oemmndcbldboiebfnladdacbdfmadadm/https://www.nature.com/articles/nature07234.pdf?utm_source=wiley&getft_integrator=wiley
+            wind_expert_exp_coef = pm.Normal("wind_expert_exp_coef", mu=0.05, sigma=0.1)
+            raw_wind_ms = wind_speed_raw * 0.514444 #convert knots to m/s
+            mu = mu + wind_expert_exp_coef *raw_wind_ms # Add small constant to avoid log(0)
         
         if model_spec.get("travel_speed", False):
             travel_speed_coef = pm.Normal("travel_speed_coef", sigma=10)
@@ -462,11 +469,6 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         if model_spec.get("trend", False):
             trend_coef = pm.Normal("trend_coef", mu=0, sigma=0.1)
             mu = mu + trend_coef*np.array(delta_years)
-
-        if model_spec.get("pca", False):
-            pc1_coef = pm.Normal("pc1_coef", sigma=10)
-            pc2_coef = pm.Normal("pc2_coef", sigma=10)
-            mu = mu + pc1_coef*pc1 + pc2_coef*pc2
 
         if model_spec.get("inverse_barometer", False):
             ib_coef = pm.Normal("ib_coef", sigma=10)
@@ -507,6 +509,7 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             mu = mu + ibtracks_speed_coef * (ibtracks_speed / 10)  # normalize to 10 m/s
         
         if model_spec.get("wind_vulnerability", False):
+            #prior here: https://journals.ametsoc.org/view/journals/wcas/3/4/wcas-d-11-00007_1.xml
             v_threshold = pm.Normal("v_threshold", mu=50, sigma=10)
             v_half = pm.Normal("v_half", mu=120, sigma=15)
             v_coef = pm.Normal("v_coef", sigma=10)
@@ -550,6 +553,7 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
 
 
+        quit()
         if use_ulln:
             upper_min = np.max(np.exp(observed)) 
             print("ULLN upper min:", upper_min)
@@ -570,60 +574,60 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         
         # --- Prior predictive check: draw from priors before sampling ---
 
-        prior = pm.sample_prior_predictive(samples=10000, random_seed=42)
+        # prior = pm.sample_prior_predictive(samples=10000, random_seed=42)
 
-        # extract prior predictive draws for observed outcome 'obs'
-        prior_obs = None
-        if isinstance(prior, dict):
-            prior_obs = prior.get("obs", None)
-        else:
-            try:
-                prior_obs = prior.prior_predictive["obs"].values
-            except Exception:
-                prior_obs = None
+        # # extract prior predictive draws for observed outcome 'obs'
+        # prior_obs = None
+        # if isinstance(prior, dict):
+        #     prior_obs = prior.get("obs", None)
+        # else:
+        #     try:
+        #         prior_obs = prior.prior_predictive["obs"].values
+        #     except Exception:
+        #         prior_obs = None
 
-        if prior_obs is not None:
-            prior_vals = prior_obs.flatten()
-            # Safely convert to log-space. Only log-transform if a majority of draws are positive.
-            prior_vals = prior_vals[np.isfinite(prior_vals)]
-            n = len(prior_vals)
-            n_pos = int((prior_vals > 0).sum())
-            if n > 0 and n_pos >= max(1, int(0.5 * n)):
-                # log-transform positive draws; drop non-positive values
-                prior_vals_plot = np.log(prior_vals[prior_vals > 0] + 1e-12)
-            else:
-                # fallback: assume prior draws are already on the log scale
-                prior_vals_plot = prior_vals
-            if prior_vals_plot.size == 0:
-                prior_vals_plot = np.array([np.nan])
-            combined = np.concatenate([observed, prior_vals_plot])
-            bins = np.linspace(np.nanmin(combined), np.nanmax(combined), max(int(np.sqrt(len(observed))), 25))
-            plt.figure(figsize=(10,6))
-            plt.hist(prior_vals_plot, bins=bins, density=True, alpha=0.5, label="Prior predictive (log or fallback)")
-            plt.hist(observed, bins=bins, density=True, alpha=0.5, label="Observed (log)")
-            plt.xlabel("ln(Base Damage)")
-            plt.ylabel("Density")
-            plt.title(f"Prior Predictive vs Observed ({model_name})")
-            plt.legend()
-            plt.savefig(os.path.join(model_path, f"{filename}_prior_predictive_hist.png"))
-            plt.close()
+        # if prior_obs is not None:
+        #     prior_vals = prior_obs.flatten()
+        #     # Safely convert to log-space. Only log-transform if a majority of draws are positive.
+        #     prior_vals = prior_vals[np.isfinite(prior_vals)]
+        #     n = len(prior_vals)
+        #     n_pos = int((prior_vals > 0).sum())
+        #     if n > 0 and n_pos >= max(1, int(0.5 * n)):
+        #         # log-transform positive draws; drop non-positive values
+        #         prior_vals_plot = np.log(prior_vals[prior_vals > 0] + 1e-12)
+        #     else:
+        #         # fallback: assume prior draws are already on the log scale
+        #         prior_vals_plot = prior_vals
+        #     if prior_vals_plot.size == 0:
+        #         prior_vals_plot = np.array([np.nan])
+        #     combined = np.concatenate([observed, prior_vals_plot])
+        #     bins = np.linspace(np.nanmin(combined), np.nanmax(combined), max(int(np.sqrt(len(observed))), 25))
+        #     plt.figure(figsize=(10,6))
+        #     plt.hist(prior_vals_plot, bins=bins, density=True, alpha=0.5, label="Prior predictive (log or fallback)")
+        #     plt.hist(observed, bins=bins, density=True, alpha=0.5, label="Observed (log)")
+        #     plt.xlabel("ln(Base Damage)")
+        #     plt.ylabel("Density")
+        #     plt.title(f"Prior Predictive vs Observed ({model_name})")
+        #     plt.legend()
+        #     plt.savefig(os.path.join(model_path, f"{filename}_prior_predictive_hist.png"))
+        #     plt.close()
 
-        # Optional: prior predictive for surge_true if present
-        prior_surge = None
-        if isinstance(prior, dict):
-            prior_surge = prior.get("surge_true", None)
-        else:
-            try:
-                prior_surge = prior.prior_predictive["surge_true"].values
-            except Exception:
-                prior_surge = None
+        # # Optional: prior predictive for surge_true if present
+        # prior_surge = None
+        # if isinstance(prior, dict):
+        #     prior_surge = prior.get("surge_true", None)
+        # else:
+        #     try:
+        #         prior_surge = prior.prior_predictive["surge_true"].values
+        #     except Exception:
+        #         prior_surge = None
 
-        if prior_surge is not None:
-            plt.figure(figsize=(6,4))
-            plt.hist(prior_surge.flatten(), bins=50, density=True, alpha=0.7)
-            plt.title("Prior predictive: surge_true")
-            plt.savefig(os.path.join(model_path, f"{filename}_prior_surge_true_hist.png"))
-            plt.close()
+        # if prior_surge is not None:
+        #     plt.figure(figsize=(6,4))
+        #     plt.hist(prior_surge.flatten(), bins=50, density=True, alpha=0.7)
+        #     plt.title("Prior predictive: surge_true")
+        #     plt.savefig(os.path.join(model_path, f"{filename}_prior_surge_true_hist.png"))
+        #     plt.close()
 
         trace = pm.sample(draws=1000, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True})
         summary = az.summary(
@@ -703,6 +707,8 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         var_names.append("ibtracks_speed_coef")
     if model_spec.get("wind_vulnerability", False):
         var_names += ["v_threshold", "v_half", "v_coef"]
+    if model_spec.get("wind_expert_exp", False):
+        var_names.append("wind_expert_exp_coef")
     if use_ulln:
         var_names += ["upper_deterministic"]
     if model_spec.get('r34_mean', False):
@@ -723,7 +729,16 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         var_names += ["water_level_coef"]
     if model_spec.get("surge_estimated", False):
         var_names.append("surge_coef")
-
+    if model_spec.get("surge_estimated_p", False):
+        var_names += ["surge_power"]
+    if model_spec.get("raw_pressure", False):
+        var_names.append("pressure_coef")
+    if model_spec.get("raw_wind", False):
+        var_names.append("wind_coef")
+    if model_spec.get("economic_vulnerability", False):
+        var_names += ["economic_coef_vuln", "vulnerability_coef"]
+    if model_spec.get("surge_estimated_trunc", False):
+        var_names.append("surge_coef")
 
 
 
@@ -869,20 +884,24 @@ if __name__ == "__main__":
 
     #Example usage
     df = generate_csv_data()
+
     print(df.shape)
-    df_clean = df.dropna(subset=['ATD', 'population', 'WPC', 'lf_wind', 'lf_pressure', 'Lat_db', 'Lon_db'])
-    print(df_clean.shape)
-    df_clean = df_clean[df_clean['basedamage'] > 0]
-    print(df_clean.shape)
-    df_clean = df_clean[df_clean['ND'] > 0]
-    print(df_clean.shape)
+    df_clean = df.dropna(subset=['population', 'WPC', 'lf_wind', 'lf_pressure',])# 'Lat_db', 'Lon_db'])
+
     #try data past 1960 only
     #df_clean = df_clean[df_clean['Year'] >= 1960]
 
 
     model_specs = [
-        {"economic": True, "pressure": True, 'trend': True, 'surge_estimated': True},
-        {"economic": True, "pressure": True, 'trend': True, 'raw_storm_tide': True},
+        {"economic": True, "pressure": True, 'trend': True, "surge_estimated": True},
+        {"economic": True, "pressure": True, 'trend': True, "surge_estimated_trunc": True},
+        {"economic": True, "pressure": True, 'trend': True,},
+
+
+
+        
+
+
 
 
         #{"economic": True, "pressure": True, "water_level": True, "trend": True},
@@ -895,7 +914,7 @@ if __name__ == "__main__":
   
 
     ]
-    #hurricane_physical_model(df_clean, model_spec={"trend": True,  "pressure": True, "economic": True, "surge_estimated": True},use_ulln=False, observed_variable='basedamage')
-    comparison_df, traces = compare_models(df_clean, model_specs, use_ulln=False, observed_variable='basedamage')
+    hurricane_physical_model(df_clean, model_spec={"trend": True,  "economic": True, "pressure": True},use_ulln=False, observed_variable='basedamage')
+    #comparison_df, traces = compare_models(df_clean, model_specs, use_ulln=False, observed_variable='basedamage')
         # Compare both methods
 

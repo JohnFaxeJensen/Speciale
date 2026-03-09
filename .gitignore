@@ -1,12 +1,19 @@
 /Pyfes_data
 
+__pycache__/
 *.nc
 
-
+/
 *.adf
 USA_HistoricalPopulationDataset/
 USpop_m5_tif/
-
+temp_data/
 *.png
 *.jpg
 *.csv
+*.mat
+Code/Data_preprocessing/__pycache__/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.cache/
