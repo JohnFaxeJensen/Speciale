@@ -4,16 +4,18 @@ import arviz as az
 from matplotlib import pyplot as plt
 import os
 import pandas as pd
-import pytensor.tensor as pt
+import pytensor
 
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
+pytensor.config.cxx=""
+
+# from sklearn.decomposition import PCA
+# from sklearn.preprocessing import StandardScaler
+# from sklearn.linear_model import LinearRegression
 import sys
 sys.path.append(r"./Speciale/Code")
-from wind_eq_comparison_final import equation_11_wind
+#from wind_eq_comparison_final import equation_11_wind
 from ULLN import ulln_logp,  ulln_random
-from Data_preprocessing.generate_csv import generate_csv_data
+#from Data_preprocessing.generate_csv import generate_csv_data
 
 rng = np.random.default_rng(seed=42)
 
@@ -216,8 +218,6 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
     r50_mean = df_clean['R50_MEAN_RADIUS'].values
     r64_mean = df_clean['R64_MEAN_RADIUS'].values
 
-    economic_var = np.log(population*WPC/area)
-    lr = LinearRegression().fit(economic_var.reshape(-1, 1), np.array(delta_years))
 
 
 
@@ -225,11 +225,11 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
 
         # Priors for the linear combination
-        alpha = pm.Normal("alpha", mu=0, sigma=200)
+        alpha = pm.Normal("alpha", mu=0, sigma=20)
         sigma = pm.HalfNormal("sigma", sigma=20)
 
         # Build mu dynamically based on model_spec
-        mu = alpha
+        mu = alpha 
 
         wind_true_specs = ["wind",]
         needs_wind_true = any(model_spec.get(spec, False) for spec in wind_true_specs)
@@ -275,7 +275,10 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             wind_coef = pm.Normal("wind_coef", sigma=5)
             wind_speed_relative = wind_speed_raw / category_1_wind_baseline
             mu = mu + wind_coef*wind_speed_relative
-
+        if model_spec.get("wind_pressure_ratio", False):
+            wind_pressure_coef = pm.Normal("wind_pressure_coef", sigma=5)
+            wind_pressure_ratio = (wind_speed_raw / (pressure_raw + 1)) / (category_1_wind_baseline / (category_1_pressure_baseline + 1))
+            mu = mu + wind_pressure_coef*wind_pressure_ratio
 
         # if model_spec.get("surge_estimated", False):
 
@@ -467,7 +470,7 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
             mu = mu + travel_speed_coef*travel_speed
 
         if model_spec.get("trend", False):
-            trend_coef = pm.Normal("trend_coef", mu=0, sigma=0.1)
+            trend_coef = pm.Normal("trend_coef", mu=0, sigma=0.01)
             mu = mu + trend_coef*np.array(delta_years)
 
         if model_spec.get("inverse_barometer", False):
@@ -552,8 +555,6 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
 
 
 
-
-        quit()
         if use_ulln:
             upper_min = np.max(np.exp(observed)) 
             print("ULLN upper min:", upper_min)
@@ -629,7 +630,7 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         #     plt.savefig(os.path.join(model_path, f"{filename}_prior_surge_true_hist.png"))
         #     plt.close()
 
-        trace = pm.sample(draws=1000, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True})
+        trace = pm.sample(draws=1000, tune=1000, target_accept=0.95, idata_kwargs={'log_likelihood':True}, compile_kwargs={"mode": "NUMBA"})
         summary = az.summary(
             trace,
             hdi_prob=0.95,
@@ -739,6 +740,8 @@ def hurricane_physical_model(df,  model_spec=None, use_ulln=False, observed_vari
         var_names += ["economic_coef_vuln", "vulnerability_coef"]
     if model_spec.get("surge_estimated_trunc", False):
         var_names.append("surge_coef")
+    if model_spec.get("wind_pressure_ratio", False):
+        var_names.append("wind_pressure_coef")
 
 
 
@@ -883,7 +886,8 @@ def compare_model_by_period(df, model_spec, cutoff_year, ATD=False, inflation=Fa
 if __name__ == "__main__":
 
     #Example usage
-    df = generate_csv_data()
+    #df = generate_csv_data()
+    df = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data_with_all_features.csv")
 
     print(df.shape)
     df_clean = df.dropna(subset=['population', 'WPC', 'lf_wind', 'lf_pressure',])# 'Lat_db', 'Lon_db'])
@@ -893,9 +897,8 @@ if __name__ == "__main__":
 
 
     model_specs = [
-        {"economic": True, "pressure": True, 'trend': True, "surge_estimated": True},
-        {"economic": True, "pressure": True, 'trend': True, "surge_estimated_trunc": True},
         {"economic": True, "pressure": True, 'trend': True,},
+        {"economic": True, "wind_pressure_ratio": True, 'trend': True,}
 
 
 
@@ -914,7 +917,7 @@ if __name__ == "__main__":
   
 
     ]
-    hurricane_physical_model(df_clean, model_spec={"trend": True,  "economic": True, "pressure": True},use_ulln=False, observed_variable='basedamage')
-    #comparison_df, traces = compare_models(df_clean, model_specs, use_ulln=False, observed_variable='basedamage')
+    #hurricane_physical_model(df_clean, model_spec={"trend": True, "economic": True, "pressure": True}, use_ulln=False, observed_variable='basedamage')
+    comparison_df, traces = compare_models(df_clean, model_specs, use_ulln=False, observed_variable='basedamage')
         # Compare both methods
 

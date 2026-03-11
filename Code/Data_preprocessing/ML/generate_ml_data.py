@@ -4,9 +4,8 @@ import joblib
 import sys
 import pickle
 sys.path.append(r"./Speciale/Code")
-from Data_preprocessing.ML.ml_utils import safe_inv_boxcox, FEATURE_COLUMNS, calculate_mean_wind_radius
+from Data_preprocessing.ML.ml_utils import safe_inv_boxcox, FEATURE_COLUMNS, CONSTRUCTED_FEATURES, calculate_mean_wind_radius
 
-feature_columns = FEATURE_COLUMNS
 
 def calculate_mean_wind_radius(ne, se, sw, nw):
     """
@@ -51,6 +50,14 @@ def estimate_mean_wind_radius(df, radius):
         split_year = 2001
     else:
         split_year = 2004
+    working_frame["pressure_relative"] = 1023.25 - working_frame["USA_PRES"]
+    working_frame["wind_pressure_ratio"] = (
+        working_frame["USA_WIND"] /
+        (working_frame["pressure_relative"] + 1)
+    )
+    feature_columns = FEATURE_COLUMNS + CONSTRUCTED_FEATURES
+    feature_columns.remove('USA_PRES')
+
     df_preYear = working_frame[working_frame['Year'] < split_year]
     df_postYear = working_frame[working_frame['Year'] >= split_year]
     #data exists only post 2004 so calculations here are valid NAN is 0's 
@@ -72,14 +79,10 @@ def estimate_mean_wind_radius(df, radius):
     df_preYear_zero[radius + '_MEAN_RADIUS'] = 0
     #for non zero radius predict using regression model
     reg_model = joblib.load(f'C:\\Users\\123ti\\Documents\\Speciale_git\\Speciale\\Code\\Data_preprocessing\\ML\\regressors\\model_{radius}.joblib')
-    lambda_path = f'C:\\Users\\123ti\\Documents\\Speciale_git\\Speciale\\Code\\Data_preprocessing\\ML\\regressors\\fitted_lambda_{radius}.pkl'
-    with open(lambda_path, 'rb') as f:
-        fitted_lambda = pickle.load(f)
+
     X_preYear_nonzero = df_preYear_nonzero[feature_columns]
     #apply lambda transformation
-    offset = 0.1
-    y_pred_transformed = reg_model.predict(X_preYear_nonzero)
-    y_pred_original = safe_inv_boxcox(y_pred_transformed, fitted_lambda, offset=offset)
+    y_pred_original = reg_model.predict(X_preYear_nonzero)
     df_preYear_nonzero[radius + '_MEAN_RADIUS'] = y_pred_original
     #combine pre year dataframes
     df_preYear = pd.concat([df_preYear_zero, df_preYear_nonzero], ignore_index=False)

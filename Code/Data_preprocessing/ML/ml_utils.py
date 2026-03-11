@@ -13,7 +13,11 @@ from scipy.special import inv_boxcox
 # ============================================================
 FEATURE_COLUMNS = [
     'LAT', 'LON', 'USA_WIND', 'USA_PRES', 'STORM_SPEED_ms', 
-    'Month', 'Year', 'Day', 'DIST2LAND_m', 'STORM_DIR'
+    'Month', 'Year', 'DIST2LAND_m', 'STORM_DIR',
+]
+CONSTRUCTED_FEATURES = [
+    'pressure_relative',
+    'wind_pressure_ratio',
 ]
 
 

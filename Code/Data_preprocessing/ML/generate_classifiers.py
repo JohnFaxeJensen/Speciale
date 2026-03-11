@@ -10,11 +10,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, classification_report
 import xgboost as xgb
 from sklearn.model_selection import cross_val_score, KFold
-from Data_preprocessing.ML.ml_utils import FEATURE_COLUMNS
+from Data_preprocessing.ML.ml_utils import FEATURE_COLUMNS, CONSTRUCTED_FEATURES
+from sklearn.model_selection import GroupShuffleSplit
 
 import joblib
 import generate_training_data
-feature_columns = FEATURE_COLUMNS
+
 
 training_data = generate_training_data.get_training_data()
 def create_classifier(radius):
@@ -34,17 +35,41 @@ def create_classifier(radius):
 
 
 
-    training_data_clean = training_data.dropna(subset=feature_columns + [predict_column])
-
+    training_data_clean = training_data.dropna(subset=FEATURE_COLUMNS + [predict_column])
+    training_data_clean["pressure_relative"] = 1023.25 - training_data_clean["USA_PRES"]
+    training_data_clean["wind_pressure_ratio"] = (
+        training_data_clean["USA_WIND"] /
+        (training_data_clean["pressure_relative"] + 1)
+    )
+    feature_columns = FEATURE_COLUMNS + CONSTRUCTED_FEATURES
+    feature_columns.remove('USA_PRES')
     X = training_data_clean[feature_columns]
     y = training_data_clean[predict_column]
 
-
-    # Split data into training and testing sets
-
-    # Split data into training and testing sets
-    print("\nSplitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Use groups from cleaned data to match X and y indices
+    groups = training_data_clean['USA_ATCF_ID'].values
+    
+    # Try to find a split where both classes are present in training set
+    train_idx, test_idx = None, None
+    for attempt in range(10):
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42 + attempt)
+        train_idx, test_idx = next(gss.split(X, y, groups=groups))
+        # Check if both classes are present in training set
+        if len(np.unique(y.iloc[train_idx])) == 2:
+            break
+    
+    # If no suitable split found, fall back to stratified split
+    if train_idx is None or len(np.unique(y.iloc[train_idx])) != 2:
+        print("Warning: Using stratified split as fallback (group distribution couldn't guarantee both classes)")
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+    else:
+        # Split data into training and testing sets
+        X_train = X.iloc[train_idx]
+        X_test = X.iloc[test_idx]
+        y_train = y.iloc[train_idx]
+        y_test = y.iloc[test_idx]
 
 
 
@@ -111,7 +136,13 @@ def create_classifier(radius):
     print(y_train.value_counts())
     print(f"\nClass distribution (test):")
     print(y_test.value_counts())
-    print(f"\nClass imbalance ratio: {y_train.value_counts()[1] / y_train.value_counts()[0]:.2f}")
+    
+    # Calculate imbalance ratio only if both classes are present
+    if 0 in y_train.value_counts().index and 1 in y_train.value_counts().index:
+        imbalance_ratio = y_train.value_counts()[1] / y_train.value_counts()[0]
+        print(f"\nClass imbalance ratio: {imbalance_ratio:.2f}")
+    else:
+        print(f"\nWarning: Not all classes present in training data")
 
     print(f"\nPrediction distribution (baseline):")
     print(f"Predicted 0: {(y_pred_baseline == 0).sum()}")
@@ -160,6 +191,8 @@ def create_classifier(radius):
         pd.DataFrame(importance.items(), columns=['feature', 'importance'])
         .sort_values(by='importance', ascending=False)
     )
+    print("\nFeature Importance (Gain):")
+    print(importance_df)
 
     # Map feature names correctly
     feature_map = {f"f{i}": name for i, name in enumerate(feature_columns)}

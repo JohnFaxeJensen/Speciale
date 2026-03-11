@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from geopy import distance
 import os
+import tqdm
 
 def find_closest_time_indices(times, target_time):
     
@@ -164,7 +165,7 @@ def generate_travel_speed(hurricane_data, Ibtracs_data):
     speeds_at_landfall = []
     
     # Process each hurricane
-    for index, row in relevant_data.iterrows():
+    for index, row in tqdm.tqdm(relevant_data.iterrows(), total=relevant_data.shape[0]):
         hurricane_id = row['ATCF_ID']
         landfall_time = row['lf_ISO_TIME']
         landfall_lat = row['lf_lat']
@@ -209,7 +210,7 @@ def generate_ibtracs(hurricane_data, Ibtracs_data, radius_types=['R34', 'R50', '
     radii_data = {rt: {'NE': [], 'SE': [], 'SW': [], 'NW': []} for rt in radius_types}
     
     # Process each hurricane
-    for index, row in relevant_data.iterrows():
+    for index, row in tqdm.tqdm(relevant_data.iterrows(), total=relevant_data.shape[0]):
         hurricane_id = row['ATCF_ID']
         landfall_time = row['lf_ISO_TIME']
         
@@ -254,10 +255,7 @@ def generate_ibtracs(hurricane_data, Ibtracs_data, radius_types=['R34', 'R50', '
     return hurricane_data
 
 def generate_travel_speed_data(df):
-    path = r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/travelspeed_data.csv"
-    if os.path.exists(path):
-        print("Travel speed data already exists. Loading from file.")
-        return pd.read_csv(path)
+
     valid_IDs = df['ATCF_ID'].unique()
     # Paths
     ibtracks_data = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\ibtracs.ALL.list.v04r01.csv", low_memory=False)
@@ -265,13 +263,9 @@ def generate_travel_speed_data(df):
     
     df_with_travelspeed = generate_travel_speed(df, ibtracks_data_filtered)
     df_with_travelspeed = df_with_travelspeed.drop_duplicates()
-    df_with_travelspeed.to_csv(path, index=False)
     return df_with_travelspeed
 def generate_ibtracs_data(df):
-    path = r"C:/Users/123ti/Documents/Speciale_git/Speciale/Code/Data_preprocessing/generated_data/ibtracs_data.csv"
-    if os.path.exists(path):
-        print("IBTrACS data already exists. Loading from file.")
-        return pd.read_csv(path)
+
     valid_IDs = df['ATCF_ID'].unique()
     # Paths
     ibtracks_data = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\ibtracs.ALL.list.v04r01.csv", low_memory=False)
@@ -279,7 +273,6 @@ def generate_ibtracs_data(df):
     
     df_with_ibtracs = generate_ibtracs(df, ibtracks_data_filtered)
     df_with_ibtracs = df_with_ibtracs.drop_duplicates()
-    df_with_ibtracs.to_csv(path, index=False)
     return df_with_ibtracs
 
 

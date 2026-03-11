@@ -60,7 +60,8 @@ print("Bounding box aligned to FES grid:", bbox)
 
 
 os.chdir(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data")
-cfg = pyfes.load_config(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data\fes2022.yaml", bbox=bbox)
+#cfg = pyfes.load_config(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data\fes2022.yaml", bbox=bbox)
+cfg = pyfes.config.load(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data\fes2022.yaml", bbox=bbox)
 
 
 date = np.datetime64('1997-08-23T00:00:00')
@@ -72,10 +73,10 @@ lons = np.full(dates.shape, lon_station)
 lats = np.full(dates.shape, lat_station)
 
 tide, lp, flag_tide = pyfes.evaluate_tide( #Tidal elevation short period and long period
-    cfg['tide'], dates, lons, lats, num_threads=1
+    cfg.models['tide'], dates, lons, lats
 )
 load, load_lp, flag_load = pyfes.evaluate_tide( #Crust compression load tide short and long period
-    cfg['radial'], dates, lons, lats, num_threads=1
+    cfg.models['radial'], dates, lons, lats
 )
 print(f'Tide evaluation flags: tide={flag_tide}, load={flag_load}')
 # Convert numpy.datetime64 array to pandas datetime
