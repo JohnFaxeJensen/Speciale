@@ -5,9 +5,20 @@ import os
 import tqdm
 
 def find_closest_time_indices(times, target_time):
+
+    if hasattr(times, 'values'):
+        times_array = times.values
+    else:
+        times_array = np.array(times)
     
-    times_before = times[times < target_time]
-    times_after = times[times > target_time]    
+    # Ensure target_time is a scalar
+    if hasattr(target_time, 'item'):
+        target = target_time.item()  # Convert numpy/pandas scalar to Python scalar
+    else:
+        target = target_time
+    
+    times_before = times_array[times_array < target]
+    times_after = times_array[times_array > target]    
     if len(times_before) == 0 or len(times_after) == 0:
         print(f"Not enough data before/after landfall for {target_time}")
         return None
@@ -167,7 +178,10 @@ def generate_travel_speed(hurricane_data, Ibtracs_data):
     # Process each hurricane
     for index, row in tqdm.tqdm(relevant_data.iterrows(), total=relevant_data.shape[0]):
         hurricane_id = row['ATCF_ID']
-        landfall_time = row['lf_ISO_TIME']
+        if hasattr(row['lf_ISO_TIME'], 'iloc'):
+            landfall_time = row['lf_ISO_TIME'].iloc[0]  # Get the actual value
+        else:
+            landfall_time = row['lf_ISO_TIME']
         landfall_lat = row['lf_lat']
         landfall_lon = row['lf_lon']
         
@@ -255,6 +269,10 @@ def generate_ibtracs(hurricane_data, Ibtracs_data, radius_types=['R34', 'R50', '
     return hurricane_data
 
 def generate_travel_speed_data(df):
+    save_path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\travel_speed_data.csv"
+    if os.path.exists(save_path):
+        print("Travel speed data already exists. Loading from file.")
+        return pd.read_csv(save_path)
 
     valid_IDs = df['ATCF_ID'].unique()
     # Paths
@@ -263,9 +281,13 @@ def generate_travel_speed_data(df):
     
     df_with_travelspeed = generate_travel_speed(df, ibtracks_data_filtered)
     df_with_travelspeed = df_with_travelspeed.drop_duplicates()
+    df_with_travelspeed.to_csv(save_path, index=False)
     return df_with_travelspeed
 def generate_ibtracs_data(df):
-
+    save_path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\ibtracs_data.csv"
+    if os.path.exists(save_path):
+        print("Ibtracs data already exists. Loading from file.")
+        return pd.read_csv(save_path)
     valid_IDs = df['ATCF_ID'].unique()
     # Paths
     ibtracks_data = pd.read_csv(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\ibtracs.ALL.list.v04r01.csv", low_memory=False)
@@ -273,6 +295,7 @@ def generate_ibtracs_data(df):
     
     df_with_ibtracs = generate_ibtracs(df, ibtracks_data_filtered)
     df_with_ibtracs = df_with_ibtracs.drop_duplicates()
+    df_with_ibtracs.to_csv(save_path, index=False)
     return df_with_ibtracs
 
 

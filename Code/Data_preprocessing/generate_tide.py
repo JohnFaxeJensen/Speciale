@@ -46,7 +46,10 @@ def bounding_box(lat, lon, delta_lat=0.5, delta_lon=0.5):
 
 
 def generate_tide_data(lat_lon_time_df):
-
+    save_path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\tide_data_lf.csv"
+    if os.path.exists(save_path):
+        print("Tide data already exists. Loading from file.")
+        return pd.read_csv(save_path)
     data = pd.read_excel(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data.xls", sheet_name='ATD of ICAT', engine='xlrd')
     data['lf_ISO_TIME'] = pd.to_datetime(data['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
 
@@ -89,7 +92,7 @@ def generate_tide_data(lat_lon_time_df):
         return copy_df
 
     new_data = add_tide_column(lat_lon_time_df)
-
+    new_data.to_csv(save_path, index=False)
     return new_data
 
 def simulate_range_at_peak(lat, lon, time):
@@ -123,12 +126,16 @@ def simulate_range_at_peak(lat, lon, time):
     return tidal_range*0.01  #convert from cm to m
 
 def generate_tidal_ranges():
+    save_path = r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\tidal_ranges.csv"
+    if os.path.exists(save_path):
+        print("Tidal range data already exists. Loading from file.")
+        return pd.read_csv(save_path)
     #this function is used to calculate tidal range for tide observations close to landfall
     manual_checked_data = pd.read_excel(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check.xlsx")
     print(manual_checked_data.shape)
     #remove data points with no Lat_db and Lon_db
     copy = manual_checked_data.copy()
-    relevant_columns = ['Unique_ID','Lat_db', 'Lon_db', 'lf_ISO_TIME']
+    relevant_columns = ['Lat_db', 'Lon_db', 'lf_ISO_TIME']
     copy = copy[relevant_columns]
     os.chdir(r"C:\Users\123ti\Documents\Speciale_git\Speciale\Pyfes_data")
 
@@ -150,7 +157,6 @@ def generate_tidal_ranges():
             tide_range = simulate_range_at_peak(lat, lon, datetime)
         tide_ranges.append(tide_range)
     copy['Tidal_Range_peak'] = tide_ranges
-
+    copy.to_csv(save_path, index=False)
     return copy
 
-#generate_tidal_ranges()

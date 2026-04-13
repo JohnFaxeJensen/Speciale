@@ -136,29 +136,29 @@ def compute_and_plot_trends(year_start=1900, year_end=2021):
     plt.show()
 
 def compute_epoch_fix():
-    path = r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\trends_to_convert_tide_levels.csv'
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    else:
-        storm_tide_data  = pd.read_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check.xlsx')
-        #clean data for no Lat_db and Lon_db
-        storm_tide_data = storm_tide_data.dropna(subset=['Lat_db', 'Lon_db'])
+    save_path = r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\trends_to_convert_tide_levels.csv'
+    if os.path.exists(save_path):
+        print("Epoch correction data already exists. Loading from file.")
+        return pd.read_csv(save_path)
+    storm_tide_data  = pd.read_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\surge_data_manual_check.xlsx')
+    #clean data for no Lat_db and Lon_db
+    storm_tide_data = storm_tide_data.dropna(subset=['Lat_db', 'Lon_db'])
 
-        unique_ids = storm_tide_data['Unique_ID'].values
-        lats = storm_tide_data['Lat_db'].values
-        lons = storm_tide_data['Lon_db'].values
-        years = storm_tide_data['Year'].values
+    lf_ISO_TIMEs = storm_tide_data['lf_ISO_TIME'].values
+    lats = storm_tide_data['Lat_db'].values
+    lons = storm_tide_data['Lon_db'].values
+    years = storm_tide_data['Year'].values
 
-        ids = []
-        trends = []
-        for zip_id_lat_lon_year in zip(unique_ids, lats, lons, years):
-            unique_id, lat, lon, year = zip_id_lat_lon_year
-            offset, error_offset = get_trend_at_location(lat, lon, year)
-            ids.append(unique_id)
-            trends.append((offset, error_offset))
-        trend_df = pd.DataFrame(ids, columns=['Unique_ID'])
-        trend_df['Offset_to_1983_2001_epoch_m'] = [t[0] for t in trends]
-        trend_df['Error_Offset_m'] = [t[1] for t in trends]
+    lf_times = []
+    trends = []
+    for zip_id_lat_lon_year in zip(lf_ISO_TIMEs, lats, lons, years):
+        lf_ISO_TIME, lat, lon, year = zip_id_lat_lon_year
+        offset, error_offset = get_trend_at_location(lat, lon, year)
+        lf_times.append(lf_ISO_TIME)
+        trends.append((offset, error_offset))
+    trend_df = pd.DataFrame(lf_times, columns=['lf_ISO_TIME'])
+    trend_df['Offset_to_1983_2001_epoch_m'] = [t[0] for t in trends]
+    trend_df['Error_Offset_m'] = [t[1] for t in trends]
 
-        path = r'C:\Users\123ti\Documents\Speciale_git\Speciale\Code\Data_preprocessing\generated_data\trends_to_convert_tide_levels.csv'
-        trend_df.to_csv(path, index=False)
+    trend_df.to_csv(save_path, index=False)
+    return trend_df

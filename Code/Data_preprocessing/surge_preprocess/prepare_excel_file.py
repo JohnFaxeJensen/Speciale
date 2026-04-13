@@ -172,7 +172,7 @@ def generate_surge_data(df):
     
 
     #merge on df and do left join, fill missing values manually afterwards
-    df_for_surge_merge = df[['Unique_ID','ATCF_ID','name', 'Year', 'lf_state', 'lf_lat', 'lf_lon', 'lf_ISO_TIME']]
+    df_for_surge_merge = df[['ATCF_ID','name', 'Year', 'lf_state', 'lf_lat', 'lf_lon', 'lf_ISO_TIME']]
 
     def append_none_values(lists_dict):
         """Helper function to append None to all tracking lists"""

@@ -21,27 +21,25 @@ def generate_csv_data(researcher = 'Aslak'):
     df_aslak = pd.read_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data.xls', sheet_name = 'ATD of ICAT')
     df_aslak = df_aslak.dropna(subset=['basedamage'])
     df_aslak = df_aslak[df_aslak['basedamage'] > 0]
-    timestamps_aslak = pd.to_datetime(df_aslak['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
 
     df_weinkle = pd.read_excel(r'C:\Users\123ti\Documents\Speciale_git\Speciale\Hurricane_data\Aslak_data.xls', sheet_name = 'ATD of Weinkle')
     df_weinkle = df_weinkle.dropna(subset=['basedamage'])
     df_weinkle = df_weinkle[df_weinkle['basedamage'] > 0]
-    timestamps_weinkle = pd.to_datetime(df_weinkle['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
-    # Combine timestamps and create unique IDs
-    combined_timestamps = set(timestamps_aslak).union(set(timestamps_weinkle))
-
-    unique_ids = {timestamp: f"ID_{i}" for i, timestamp in enumerate(combined_timestamps)}
-    df_aslak['Unique_ID'] = df_aslak['lf_ISO_TIME'].map(unique_ids)
-    df_weinkle['Unique_ID'] = df_weinkle['lf_ISO_TIME'].map(unique_ids)
-
-
-
-
+    path = 'C:\\Users\\123ti\\Documents\\Speciale_git\\Speciale\\Code\\Data_preprocessing\\generated_data\\final_hurricane_data'
     #if 'Aslak', then use aslak dataset
     if researcher == 'Aslak':
         df = df_aslak
+        path += '_aslak.csv'
+        if os.path.exists(path):
+            print("Final hurricane data already exists. Loading from file.")
+            return pd.read_csv(path)
+
     if researcher == 'Weinkle':
         df = df_weinkle
+        path += '_weinkle.csv'
+        if os.path.exists(path):
+            print("Final hurricane data already exists. Loading from file.")
+            return pd.read_csv(path)
         #add population values from Weinkle original dataset
 
     #use the orignal aslak data to merge temp data into
@@ -59,11 +57,12 @@ def generate_csv_data(researcher = 'Aslak'):
 
     #first add tide data
     print('pre_tide merge: ',df.shape)
-    df_for_for_tide = df[['Unique_ID','lf_lat', 'lf_lon', 'lf_ISO_TIME']]
+    df_for_for_tide = df[['lf_ISO_TIME','lf_lat', 'lf_lon', ]]
     tide_data = generate_tide_data(df_for_for_tide)
     print('tide data shape: ',tide_data.shape)
     print(tide_data.columns)
-    df = pd.merge(df, tide_data, how='left', left_on=['Unique_ID'], right_on=['Unique_ID'], suffixes=('', '_tide'))
+    tide_data['lf_ISO_TIME'] = pd.to_datetime(tide_data['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
+    df = pd.merge(df, tide_data, how='left', left_on=['lf_ISO_TIME'], right_on=['lf_ISO_TIME'], suffixes=('', '_tide'))
     columns_with_suffix = [col for col in df.columns if col.endswith('_tide')]
     df = df.drop(columns_with_suffix, axis=1)
     print('post_tide merge: ',df.shape)
@@ -89,17 +88,18 @@ def generate_csv_data(researcher = 'Aslak'):
     df.rename({'Anomaly': 'Anomaly_global'}, axis=1, inplace=True)
     print('post_global_temp merge: ',df.shape)
     #merge ibtracs data for travelspeed
-    relevant_columns_for_travelspeed = ['ATCF_ID', 'lf_ISO_TIME', 'lf_lat', 'lf_lon', 'Unique_ID']
+    relevant_columns_for_travelspeed = ['ATCF_ID', 'lf_ISO_TIME', 'lf_lat', 'lf_lon',]
     travelspeed_df = generate_travel_speed_data(df[relevant_columns_for_travelspeed])
     print("Travelspeed data shape:", travelspeed_df.shape)
-    df = pd.merge(df, travelspeed_df, how='left', left_on=['Unique_ID'], right_on=['Unique_ID'], suffixes=('', '_travelspeed'))
+    travelspeed_df['lf_ISO_TIME'] = pd.to_datetime(travelspeed_df['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
+    df = pd.merge(df, travelspeed_df, how='left', left_on=['lf_ISO_TIME'], right_on=['lf_ISO_TIME'], suffixes=('', '_travelspeed'))
     columns_with_suffix = [col for col in df.columns if col.endswith('_travelspeed')]
     df = df.drop(columns_with_suffix, axis=1)
     print("post travelspeed shape:", df.shape)
     ibtracs_data = generate_ibtracs_data(df[relevant_columns_for_travelspeed])
     print("Ibtracs data shape:", ibtracs_data.shape)
-
-    df = pd.merge(df, ibtracs_data, how='left', left_on=['Unique_ID'], right_on=['Unique_ID'], suffixes=('', '_ibtracs'))
+    ibtracs_data['lf_ISO_TIME'] = pd.to_datetime(ibtracs_data['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
+    df = pd.merge(df, ibtracs_data, how='left', left_on=['lf_ISO_TIME'], right_on=['lf_ISO_TIME'], suffixes=('', '_ibtracs'))
     columns_with_suffix = [col for col in df.columns if col.endswith('_ibtracs')]
     df = df.drop(columns_with_suffix, axis=1)  
     print("post ibtracs shape:", df.shape)
@@ -116,9 +116,9 @@ def generate_csv_data(researcher = 'Aslak'):
   
  
     radius_data = estimate_mean_radius_for_all(df)
-
-    print("Radius data shape:", radius_data.shape)
-    df = pd.merge(df, radius_data, how='left', left_on=['Unique_ID'], right_on=['Unique_ID'], suffixes=('', '_radius'))
+    
+    radius_data['lf_ISO_TIME'] = pd.to_datetime(radius_data['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
+    df = pd.merge(df, radius_data, how='left', left_on=['lf_ISO_TIME'], right_on=['lf_ISO_TIME'], suffixes=('', '_radius'))
     columns_with_suffix = [col for col in df.columns if col.endswith('_radius')]
     df = df.drop(columns_with_suffix, axis=1)
     print("post radius shape:", df.shape)
@@ -143,10 +143,10 @@ def generate_csv_data(researcher = 'Aslak'):
     print('post_risk_score merge: ',df.shape)
     #merge storm surge data 
     print('pre_surge_data merge: ',df.shape)
-    quit()
     surge_data = generate_surge_data()
-    df = pd.merge(df, surge_data, how='left', left_on=['Unique_ID'], right_on=['Unique_ID'], suffixes=('', '_surge'))
-    columns_with_suffix = [col for col in df.columns if col.endswith('_surge')]
+    surge_data['lf_ISO_TIME'] = pd.to_datetime(surge_data['lf_ISO_TIME'], format="%Y-%m-%d %H:%M:%S")
+    df = pd.merge(df, surge_data, how='left', left_on=['lf_ISO_TIME'], right_on=['lf_ISO_TIME'], suffixes=('', '_surge_df'))
+    columns_with_suffix = [col for col in df.columns if col.endswith('_surge_df')]
     df = df.drop(columns_with_suffix, axis=1)
 
     pop = df['population'].values
@@ -162,8 +162,8 @@ def generate_csv_data(researcher = 'Aslak'):
     fitted_exposure = model.predict(X)
     residuals = delta_years - fitted_exposure
     df['residual_exposure'] = residuals
+    df['fitted_exposure'] = fitted_exposure
     #final csv output
     df.to_csv(path, index=False)
     return df
 
-generate_csv_data()

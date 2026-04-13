@@ -90,7 +90,7 @@ def estimate_mean_wind_radius(df, radius):
     df_final = pd.concat([df_preYear, df_postYear], ignore_index=False)
     #sort by time
     df_final.sort_values(by=df_final['lf_ISO_TIME'].name, inplace=True)
-    df_final = df_final[['Unique_ID', radius + '_MEAN_RADIUS']]
+    df_final = df_final[['lf_ISO_TIME', radius + '_MEAN_RADIUS']]
     return df_final
 
 def estimate_mean_radius_for_all(df):
@@ -101,7 +101,7 @@ def estimate_mean_radius_for_all(df):
         frames.append(estimate_mean_wind_radius(df, radius))
     result_frame = frames[0]
     for i in range(1, len(frames)):
-        result_frame = pd.merge(result_frame, frames[i], on='Unique_ID', how='left')
+        result_frame = pd.merge(result_frame, frames[i], on='lf_ISO_TIME', how='left')
     return result_frame
 
 
